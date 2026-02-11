@@ -52,3 +52,26 @@ jobs:
 
       - name: Run web typecheck
         run: pnpm --filter web typecheck
+
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run web build
+        run: pnpm --filter web build
