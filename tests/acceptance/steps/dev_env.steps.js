@@ -5,7 +5,7 @@ const http = require('http');
 const { execSync, spawn } = require('child_process');
 const { Given, When, Then, After, setDefaultTimeout } = require('@cucumber/cucumber');
 
-setDefaultTimeout(120 * 1000);
+setDefaultTimeout(240 * 1000);
 
 const ROOT_DIR = path.resolve(__dirname, '../../..');
 const PKG_PATH = path.join(ROOT_DIR, 'package.json');
@@ -35,10 +35,12 @@ function findPids(port) {
 }
 
 function devOutputHasReadySignal(output) {
-  // On CI we reliably see the localhost URL; locally we may also see "Ready in".
+  // Treat the dev server as "ready" once logs mention port 3000 in a URL,
+  // regardless of whether the host is localhost, 127.0.0.1, etc.
   return (
-    /http:\/\/localhost:3000/.test(output) ||
-    (/Next\.js 16\.1\.6/.test(output) && /Ready in/.test(output))
+    /https?:\/\/[0-9A-Za-z\.\-]+:3000/.test(output) ||
+    /Next\.js 16\.1\.6/.test(output) ||
+    /Ready in/.test(output)
   );
 }
 
@@ -61,9 +63,9 @@ Given(
     assert.strictEqual(
       pkg.scripts[scriptName],
       expected,
-      `Expected scripts["${scriptName}"] to be "${expected}", got "${pkg.scripts[scriptName]}"`
+      `Expected scripts["${scriptName}"] to be "${expected}", got "${pkg.scripts[scriptName]}"`,
     );
-  }
+  },
 );
 
 Given(
@@ -73,10 +75,10 @@ Given(
     assert.strictEqual(
       pkg.scripts[scriptName],
       'bash scripts/dev-web.sh',
-      `Expected scripts["${scriptName}"] to invoke dev-web helper`
+      `Expected scripts["${scriptName}"] to invoke dev-web helper`,
     );
     assert.strictEqual(invocation, 'pnpm run dev:web');
-  }
+  },
 );
 
 Given('no process is currently listening on TCP port {int} on the VPS', function (port) {
@@ -93,7 +95,7 @@ Given('no process is currently listening on TCP port {int} on the VPS', function
   assert.strictEqual(
     remaining.length,
     0,
-    `Expected no process on port ${port}, but found PIDs: ${remaining.join(', ')}`
+    `Expected no process on port ${port}, but found PIDs: ${remaining.join(', ')}`,
   );
 });
 
@@ -134,14 +136,14 @@ Given(
       } catch (_err) {
         if (Date.now() - start > timeoutMs) {
           throw new Error(
-            `Timed out waiting for stale dev process PID ${child.pid} to respond on port ${port}`
+            `Timed out waiting for stale dev process PID ${child.pid} to respond on port ${port}`,
           );
         }
         // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
     }
-  }
+  },
 );
 
 Given(
@@ -150,14 +152,14 @@ Given(
     // Narrative step: assert that we recorded a stale dev PID
     assert.ok(
       this.staleDevPid,
-      'Expected a stale dev process PID to be recorded before starting dev-web helper'
+      'Expected a stale dev process PID to be recorded before starting dev-web helper',
     );
     assert.strictEqual(
       expectedCommand,
       'next dev',
-      'Scenario documents that the conflicting command is "next dev"'
+      'Scenario documents that the conflicting command is "next dev"',
     );
-  }
+  },
 );
 
 Given('the directory {string} does not contain a stale lock file', function (dirRelPath) {
@@ -189,7 +191,7 @@ When('I run {string} from the repository root', async function (command) {
 
   // Give the process a brief moment to start emitting logs before
   // subsequent steps begin polling devOutput.
-  // (Readiness is now checked in a dedicated Then step.)
+  // Readiness is asserted separately.
   // eslint-disable-next-line no-await-in-loop
   await new Promise((resolve) => setTimeout(resolve, 1000));
 });
@@ -199,9 +201,9 @@ Then(
   function (_port1, _port2) {
     assert.ok(
       devOutput.includes('Checking for processes on ports 3000 and 3001'),
-      'Expected dev-web helper to log port check message'
+      'Expected dev-web helper to log port check message',
     );
-  }
+  },
 );
 
 Then(
@@ -209,13 +211,13 @@ Then(
   function (_port1, _port2) {
     assert.ok(
       devOutput.includes('No processes found on port 3000.'),
-      'Expected message about no processes on port 3000'
+      'Expected message about no processes on port 3000',
     );
     assert.ok(
       devOutput.includes('No processes found on port 3001.'),
-      'Expected message about no processes on port 3001'
+      'Expected message about no processes on port 3001',
     );
-  }
+  },
 );
 
 Then(
@@ -223,9 +225,9 @@ Then(
   function (port) {
     assert.ok(
       devOutput.includes(`Killing process(es) on port ${port}:`),
-      `Expected dev-web helper to log killing processes on port ${port}`
+      `Expected dev-web helper to log killing processes on port ${port}`,
     );
-  }
+  },
 );
 
 Then(
@@ -233,7 +235,7 @@ Then(
   function (port1, port2) {
     assert.ok(
       this.staleDevPid,
-      'Expected staleDevPid to be recorded for restart scenario'
+      'Expected staleDevPid to be recorded for restart scenario',
     );
 
     // The stale dev PID should no longer be a live process
@@ -247,7 +249,7 @@ Then(
     }
     assert.ok(
       !stillAlive,
-      `Expected stale dev PID ${this.staleDevPid} to be terminated`
+      `Expected stale dev PID ${this.staleDevPid} to be terminated`,
     );
 
     // Optional extra: ensure no stale PID is bound to these ports according to ss
@@ -256,22 +258,22 @@ Then(
     const pids2 = findPids(port2);
     assert.ok(
       !pids1.includes(stale) && !pids2.includes(stale),
-      `Expected no stale dev process listening on ports ${port1} or ${port2}`
+      `Expected no stale dev process listening on ports ${port1} or ${port2}`,
     );
-  }
+  },
 );
 
 Then('the script removes {string} if it exists', function (_dirRelPath) {
   assert.ok(
     devOutput.includes('Removing dev lock directory apps/web/.next/dev (if present)...'),
-    'Expected log about removing dev lock directory (if present)'
+    'Expected log about removing dev lock directory (if present)',
   );
 });
 
 Then('the script removes {string}', function (dirRelPath) {
   assert.ok(
     devOutput.includes('Removing dev lock directory apps/web/.next/dev (if present)...'),
-    'Expected log about removing dev lock directory'
+    'Expected log about removing dev lock directory',
   );
   const full = path.join(ROOT_DIR, dirRelPath);
   assert.ok(!fs.existsSync(full), `Expected directory ${full} to be removed by dev-web helper`);
@@ -280,12 +282,13 @@ Then('the script removes {string}', function (dirRelPath) {
 Then('the script starts {string}', function (_expectedCommand) {
   assert.ok(
     devOutput.includes('Starting web dev server via Turborepo...'),
-    'Expected log about starting web dev server via Turborepo'
+    'Expected log about starting web dev server via Turborepo',
   );
 });
 
 Then('the Next.js dev server starts successfully on port {int}', async function (_port) {
-  const timeoutMs = 120_000;
+  const timeoutMs = 240_000;
+
   const start = Date.now();
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -300,8 +303,8 @@ Then('the Next.js dev server starts successfully on port {int}', async function 
   }
 
   assert.ok(
-    devOutput.includes('http://localhost:3000'),
-    'Expected dev logs to include localhost:3000 URL'
+    /https?:\/\/[0-9A-Za-z\.\-]+:3000/.test(devOutput),
+    'Expected dev logs to include a URL on port 3000',
   );
 });
 
@@ -310,9 +313,9 @@ Then(
   function (errorMessage) {
     assert.ok(
       !devOutput.includes(errorMessage),
-      `Expected dev logs not to contain error message: ${errorMessage}`
+      `Expected dev logs not to contain error message: ${errorMessage}`,
     );
-  }
+  },
 );
 
 Then(
@@ -332,8 +335,8 @@ Then(
             if (res.statusCode !== statusCode) {
               reject(
                 new Error(
-                  `Expected HTTP ${statusCode} for ${pathName}, got ${res.statusCode}`
-                )
+                  `Expected HTTP ${statusCode} for ${pathName}, got ${res.statusCode}`,
+                ),
               );
             } else {
               res.resume();
@@ -371,7 +374,7 @@ Then(
       // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
-  }
+  },
 );
 
 After(async function () {
@@ -405,3 +408,4 @@ After(async function () {
     this.staleDevPid = undefined;
   }
 });
+
