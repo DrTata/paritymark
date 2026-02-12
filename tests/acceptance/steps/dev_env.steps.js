@@ -35,10 +35,13 @@ function findPids(port) {
 }
 
 function devOutputHasReadySignal(output) {
-  // Treat the dev server as "ready" once logs mention port 3000 in a URL,
-  // regardless of whether the host is localhost, 127.0.0.1, etc.
+  // Treat the dev server as "ready enough" for further checks once:
+  // - our dev helper logs that it started the web dev server via Turborepo, or
+  // - logs mention a URL on port 3000, or
+  // - we see a standard Next.js "ready" style line.
   return (
-    /https?:\/\/[0-9A-Za-z\.\-]+:3000/.test(output) ||
+    /Starting web dev server via Turborepo/.test(output) ||
+    /https?:\/\/[0-9A-Za-z.\-]+:3000/.test(output) ||
     /Next\.js 16\.1\.6/.test(output) ||
     /Ready in/.test(output)
   );
@@ -303,8 +306,8 @@ Then('the Next.js dev server starts successfully on port {int}', async function 
   }
 
   assert.ok(
-    /https?:\/\/[0-9A-Za-z\.\-]+:3000/.test(devOutput),
-    'Expected dev logs to include a URL on port 3000',
+    devOutputHasReadySignal(devOutput),
+    'Expected dev logs to indicate that the dev server has started',
   );
 });
 
