@@ -96,8 +96,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Run web tests
-        run: pnpm --filter web test
+      - name: Run tests
+        run: pnpm test
 
   acceptance:
     runs-on: ubuntu-latest
