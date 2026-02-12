@@ -8,6 +8,8 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'paritymark',
 });
 
+let poolEnded = false;
+
 /**
  * Perform a simple DB query to verify connectivity.
  * Returns true if the DB responds as expected.
@@ -18,4 +20,15 @@ async function checkDbHealth() {
   return row && Number(row.ok) === 1;
 }
 
-module.exports = { pool, checkDbHealth };
+/**
+ * Cleanly close the shared pool. Safe to call multiple times.
+ */
+async function endPool() {
+  if (poolEnded) {
+    return;
+  }
+  poolEnded = true;
+  await pool.end();
+}
+
+module.exports = { pool, checkDbHealth, endPool };

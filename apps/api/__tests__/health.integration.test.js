@@ -1,6 +1,6 @@
 const http = require('http');
 const { createServer } = require('../src/server');
-const { pool } = require('../src/db');
+const { endPool } = require('../src/db');
 
 jest.setTimeout(30000); // allow time for DB + request
 
@@ -29,7 +29,7 @@ describe('GET /health (DB-backed)', () => {
       await new Promise((resolve) => server.close(resolve));
     }
     // Close DB pool so Jest can exit cleanly
-    await pool.end();
+    await endPool();
   });
 
   test('returns 200 and indicates db is up when Postgres is reachable', (done) => {

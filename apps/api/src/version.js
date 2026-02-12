@@ -1,4 +1,5 @@
 const pkg = require('../package.json');
+const { writeAuditEvent, HELLO_AUDIT_EVENT_TYPE } = require('./audit');
 
 function getVersionMeta() {
   return {
@@ -10,7 +11,17 @@ function getVersionMeta() {
 }
 
 function versionHandler(_req, res) {
-  const body = JSON.stringify(getVersionMeta());
+  const meta = getVersionMeta();
+
+  // Fire-and-forget "hello" audit event when enabled.
+  if (process.env.ENABLE_HELLO_AUDIT === 'true') {
+    writeAuditEvent(HELLO_AUDIT_EVENT_TYPE, { meta }).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error('Failed to write audit event', err);
+    });
+  }
+
+  const body = JSON.stringify(meta);
 
   res.statusCode = 200;
   res.setHeader('Content-Type', 'application/json');

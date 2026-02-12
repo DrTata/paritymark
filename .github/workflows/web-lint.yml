@@ -161,3 +161,19 @@ jobs:
 
       - name: Run acceptance tests
         run: pnpm run test:acceptance
+
+  docs-check:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Phase 0 backend evidence doc exists
+        run: |
+          if [ ! -f docs/phase0-backend-evidence.md ]; then
+            echo "::error ::docs/phase0-backend-evidence.md is missing"
+            exit 1
+          fi
