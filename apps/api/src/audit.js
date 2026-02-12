@@ -12,15 +12,30 @@ async function ensureAuditTable() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+
   try {
     await pool.query(createSql);
   } catch (err) {
-    // In Postgres, concurrent CREATE TABLE IF NOT EXISTS can still raise
-    // a duplicate-table error due to internal catalog constraints.
-    // We treat that specific case as benign.
-    if (err && err.code === '42P07') {
+    const code = err && err.code;
+    const message = (err && err.message) || '';
+
+    // In Postgres, concurrent CREATE TABLE IF NOT EXISTS can still raise:
+    // - 42P07: duplicate-table error due to internal catalog constraints.
+    // - 23505 + pg_type_typname_nsp_index: rare unique_violation in catalog when
+    //   multiple workers create the same table/type at once.
+    //
+    // For Phase 0, we treat these specific cases as benign and rethrow everything else.
+
+    // Duplicate table
+    if (code === '42P07') {
       return;
     }
+
+    // Unique violation on pg_type_typname_nsp_index during concurrent DDL
+    if (code === '23505' && message.includes('pg_type_typname_nsp_index')) {
+      return;
+    }
+
     throw err;
   }
 }
