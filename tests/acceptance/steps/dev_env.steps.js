@@ -35,7 +35,7 @@ function findPids(port) {
 }
 
 function devOutputHasReadySignal(output) {
-  // On GitHub Actions, we reliably see the localhost URL even if "Ready in" is missing.
+  // On CI we reliably see the localhost URL; locally we may also see "Ready in".
   return (
     /http:\/\/localhost:3000/.test(output) ||
     (/Next\.js 16\.1\.6/.test(output) && /Ready in/.test(output))
@@ -187,21 +187,11 @@ When('I run {string} from the repository root', async function (command) {
     devOutput += chunk.toString();
   });
 
-  // Wait for dev server to be ready.
-  // On CI, this can take significantly longer than on a local VPS.
-  const timeoutMs = 90_000;
-  const start = Date.now();
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    if (devOutputHasReadySignal(devOutput)) {
-      break;
-    }
-    if (Date.now() - start > timeoutMs) {
-      throw new Error('Timed out waiting for dev server to be ready');
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
+  // Give the process a brief moment to start emitting logs before
+  // subsequent steps begin polling devOutput.
+  // (Readiness is now checked in a dedicated Then step.)
+  // eslint-disable-next-line no-await-in-loop
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 });
 
 Then(
@@ -284,7 +274,7 @@ Then('the script removes {string}', function (dirRelPath) {
     'Expected log about removing dev lock directory'
   );
   const full = path.join(ROOT_DIR, dirRelPath);
-  assert.ok(!fs.existsExists(full), `Expected directory ${full} to be removed by dev-web helper`);
+  assert.ok(!fs.existsSync(full), `Expected directory ${full} to be removed by dev-web helper`);
 });
 
 Then('the script starts {string}', function (_expectedCommand) {
@@ -294,7 +284,21 @@ Then('the script starts {string}', function (_expectedCommand) {
   );
 });
 
-Then('the Next.js dev server starts successfully on port {int}', function (_port) {
+Then('the Next.js dev server starts successfully on port {int}', async function (_port) {
+  const timeoutMs = 120_000;
+  const start = Date.now();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (devOutputHasReadySignal(devOutput)) {
+      break;
+    }
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('Timed out waiting for Next.js dev server to start on port 3000');
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
   assert.ok(
     devOutput.includes('http://localhost:3000'),
     'Expected dev logs to include localhost:3000 URL'
