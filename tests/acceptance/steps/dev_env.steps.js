@@ -192,11 +192,11 @@ When('I run {string} from the repository root', async function (command) {
     devOutput += chunk.toString();
   });
 
-  // Give the process a brief moment to start emitting logs before
-  // subsequent steps begin polling devOutput.
-  // Readiness is asserted separately.
+  // Give the process a few seconds to start emitting logs before
+  // subsequent steps begin asserting on devOutput. Readiness for
+  // Next.js itself is asserted separately.
   // eslint-disable-next-line no-await-in-loop
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await new Promise((resolve) => setTimeout(resolve, 5000));
 });
 
 Then(
@@ -414,4 +414,3 @@ After(async function () {
     this.staleDevPid = undefined;
   }
 });
-
