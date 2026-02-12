@@ -1,9 +1,14 @@
 const http = require('http');
 const { healthHandler } = require('./health');
 const { checkDbHealth } = require('./db');
+const { versionHandler } = require('./version');
 
 function createServer() {
   return http.createServer((req, res) => {
+    if (req.method === 'GET' && req.url === '/version') {
+      return versionHandler(req, res);
+    }
+
     if (req.method === 'GET' && req.url === '/health') {
       const useDb = process.env.API_USE_DB_HEALTH === 'true';
 
