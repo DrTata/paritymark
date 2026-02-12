@@ -75,6 +75,8 @@ Given('the API server is running in non-DB health mode', async function () {
       PORT: String(API_PORT),
       // Explicitly ensure we are in non-DB health mode
       API_USE_DB_HEALTH: 'false',
+      // Ensure version endpoint reports a deterministic env
+      NODE_ENV: 'test',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -143,6 +145,43 @@ Then(
       String(parsed[propName]),
       expectedValue,
       `Expected JSON body property "${propName}" to equal "${expectedValue}", got "${parsed[propName]}"`,
+    );
+  },
+);
+
+Then(
+  'the JSON response body has property {string} which is a non-empty string',
+  function (propName) {
+    assert.ok(
+      typeof lastBody === 'string',
+      'Expected a string response body to be recorded',
+    );
+
+    let parsed;
+    try {
+      parsed = JSON.parse(lastBody);
+    } catch (err) {
+      throw new Error(
+        `Expected JSON response body, but parsing failed: ${err.message}. Body was: ${lastBody}`,
+      );
+    }
+
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(parsed, propName),
+      `Expected JSON body to have property "${propName}", got: ${JSON.stringify(
+        parsed,
+      )}`,
+    );
+
+    const value = parsed[propName];
+    assert.strictEqual(
+      typeof value,
+      'string',
+      `Expected JSON body property "${propName}" to be a string, got ${typeof value}`,
+    );
+    assert.ok(
+      value.length > 0,
+      `Expected JSON body property "${propName}" to be a non-empty string, got "${value}"`,
     );
   },
 );
