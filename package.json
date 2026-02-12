@@ -5,11 +5,14 @@
   "packageManager": "pnpm@10.29.2",
   "scripts": {
     "dev": "turbo dev",
+    "dev:web": "bash scripts/dev-web.sh",
     "build": "turbo build",
     "lint": "turbo lint",
-    "test": "turbo test"
+    "test": "turbo test",
+    "test:acceptance": "cucumber-js tests/acceptance --require tests/acceptance"
   },
   "devDependencies": {
-    "turbo": "2.8.5"
+    "turbo": "2.8.5",
+    "@cucumber/cucumber": "^12.6.0"
   }
 }
