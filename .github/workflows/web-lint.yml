@@ -99,6 +99,43 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+  api-integration:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: paritymark
+          POSTGRES_PASSWORD: paritymark
+          POSTGRES_DB: paritymark
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U paritymark"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run API DB-backed integration tests
+        run: pnpm --filter api test:integration
+
   acceptance:
     runs-on: ubuntu-latest
     env:
