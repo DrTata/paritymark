@@ -62,6 +62,56 @@ async function waitForHealthOk(timeoutMs = 30000) {
   }
 }
 
+async function waitForDbHealthUp(timeoutMs = 30000) {
+  const start = Date.now();
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve, reject) => {
+        const req = http.get(`http://localhost:${API_PORT}/health`, (res) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => {
+            const body = Buffer.concat(chunks).toString('utf8');
+            try {
+              const json = JSON.parse(body);
+              if (
+                res.statusCode === 200 &&
+                json &&
+                json.status === 'ok' &&
+                json.db === 'up'
+              ) {
+                resolve();
+              } else {
+                reject(
+                  new Error(
+                    `DB health not up yet: status=${res.statusCode}, body=${body}`,
+                  ),
+                );
+              }
+            } catch (e) {
+              reject(e);
+            }
+          });
+        });
+        req.on('error', reject);
+      });
+      // If we reach here, DB health is up
+      break;
+    } catch (err) {
+      if (Date.now() - start > timeoutMs) {
+        throw new Error(
+          `Timed out waiting for API DB health endpoint to be ready: ${err.message}`,
+        );
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(500);
+    }
+  }
+}
+
 Given('the API server is running in non-DB health mode', async function () {
   if (apiProcess && !apiProcess.killed) {
     // Assume it is already running and healthy
@@ -86,6 +136,37 @@ Given('the API server is running in non-DB health mode', async function () {
 
   await waitForHealthOk();
 });
+
+Given(
+  'the API server is running in DB-backed health mode with a reachable Postgres database',
+  async function () {
+    if (apiProcess && !apiProcess.killed) {
+      // Assume it is already running and healthy
+      return;
+    }
+
+    apiProcess = spawn(process.execPath, ['apps/api/src/server.js'], {
+      cwd: ROOT_DIR,
+      env: {
+        ...process.env,
+        PORT: String(API_PORT),
+        API_USE_DB_HEALTH: 'true',
+        DB_HOST: process.env.DB_HOST || '127.0.0.1',
+        DB_PORT: process.env.DB_PORT || '5432',
+        DB_USER: process.env.DB_USER || 'paritymark',
+        DB_PASSWORD: process.env.DB_PASSWORD || 'paritymark',
+        DB_NAME: process.env.DB_NAME || 'paritymark',
+        NODE_ENV: 'test',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // Give the process a brief moment to start before health polling
+    await sleep(1000);
+
+    await waitForDbHealthUp();
+  },
+);
 
 When('I GET {string} from the API server', async function (pathName) {
   lastResponse = null;
