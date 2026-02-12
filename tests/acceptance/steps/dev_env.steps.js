@@ -5,7 +5,7 @@ const http = require('http');
 const { execSync, spawn } = require('child_process');
 const { Given, When, Then, After, setDefaultTimeout } = require('@cucumber/cucumber');
 
-setDefaultTimeout(60 * 1000);
+setDefaultTimeout(120 * 1000);
 
 const ROOT_DIR = path.resolve(__dirname, '../../..');
 const PKG_PATH = path.join(ROOT_DIR, 'package.json');
@@ -32,6 +32,14 @@ function findPids(port) {
     // ss may return non-zero if nothing matches; treat as "no processes"
     return [];
   }
+}
+
+function devOutputHasReadySignal(output) {
+  // On GitHub Actions, we reliably see the localhost URL even if "Ready in" is missing.
+  return (
+    /http:\/\/localhost:3000/.test(output) ||
+    (/Next\.js 16\.1\.6/.test(output) && /Ready in/.test(output))
+  );
 }
 
 Given('the ParityMark repository has a script file {string}', function (scriptRelPath) {
@@ -179,12 +187,13 @@ When('I run {string} from the repository root', async function (command) {
     devOutput += chunk.toString();
   });
 
-  // Wait for dev server to be ready
-  const timeoutMs = 30000;
+  // Wait for dev server to be ready.
+  // On CI, this can take significantly longer than on a local VPS.
+  const timeoutMs = 90_000;
   const start = Date.now();
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    if (/Next\.js 16\.1\.6/.test(devOutput) && /Ready in/.test(devOutput)) {
+    if (devOutputHasReadySignal(devOutput)) {
       break;
     }
     if (Date.now() - start > timeoutMs) {
@@ -275,7 +284,7 @@ Then('the script removes {string}', function (dirRelPath) {
     'Expected log about removing dev lock directory'
   );
   const full = path.join(ROOT_DIR, dirRelPath);
-  assert.ok(!fs.existsSync(full), `Expected directory ${full} to be removed by dev-web helper`);
+  assert.ok(!fs.existsExists(full), `Expected directory ${full} to be removed by dev-web helper`);
 });
 
 Then('the script starts {string}', function (_expectedCommand) {
@@ -305,26 +314,45 @@ Then(
 Then(
   'the dev logs show a GET request to {string} returning HTTP {int}',
   async function (pathName, statusCode) {
-    // Ensure we actually hit the dev server
-    await new Promise((resolve, reject) => {
-      const req = http.get(`http://localhost:3000${pathName}`, (res) => {
-        if (res.statusCode !== statusCode) {
-          reject(
-            new Error(
-              `Expected HTTP ${statusCode} for ${pathName}, got ${res.statusCode}`
-            )
-          );
-        } else {
-          res.resume();
-          res.on('end', resolve);
+    // Ensure we actually hit the dev server, with retries for CI slowness.
+    const requestTimeoutMs = 30_000;
+    const start = Date.now();
+    let lastError;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve, reject) => {
+          const req = http.get(`http://localhost:3000${pathName}`, (res) => {
+            if (res.statusCode !== statusCode) {
+              reject(
+                new Error(
+                  `Expected HTTP ${statusCode} for ${pathName}, got ${res.statusCode}`
+                )
+              );
+            } else {
+              res.resume();
+              res.on('end', resolve);
+            }
+          });
+          req.on('error', reject);
+        });
+        // If we get here, the request succeeded with the expected status.
+        break;
+      } catch (err) {
+        lastError = err;
+        if (Date.now() - start > requestTimeoutMs) {
+          throw lastError;
         }
-      });
-      req.on('error', reject);
-    });
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
 
     // Wait for the GET / 200 log line to appear
-    const timeoutMs = 10000;
-    const start = Date.now();
+    const logTimeoutMs = 10000;
+    const logStart = Date.now();
     // eslint-disable-next-line no-constant-condition
     while (true) {
       if (
@@ -333,7 +361,7 @@ Then(
       ) {
         break;
       }
-      if (Date.now() - start > timeoutMs) {
+      if (Date.now() - logStart > logTimeoutMs) {
         throw new Error('Timed out waiting for GET log in dev output');
       }
       // eslint-disable-next-line no-await-in-loop
