@@ -1,6 +1,7 @@
 const { pool } = require('./db');
 
 const HELLO_AUDIT_EVENT_TYPE = 'HELLO_AUDIT_EVENT';
+const ROLE_ASSIGNED_EVENT_TYPE = 'ROLE_ASSIGNED';
 const AUDIT_TABLE_NAME = 'audit_events';
 
 async function ensureAuditTable() {
@@ -24,7 +25,7 @@ async function ensureAuditTable() {
     // - 23505 + pg_type_typname_nsp_index: rare unique_violation in catalog when
     //   multiple workers create the same table/type at once.
     //
-    // For Phase 0, we treat these specific cases as benign and rethrow everything else.
+    // For Phase 0 / Phase 1, we treat these specific cases as benign and rethrow everything else.
 
     // Duplicate table
     if (code === '42P07') {
@@ -77,6 +78,9 @@ async function getLatestAuditEventByType(eventType) {
 
 module.exports = {
   HELLO_AUDIT_EVENT_TYPE,
+  ROLE_ASSIGNED_EVENT_TYPE,
+  AUDIT_TABLE_NAME,
+  ensureAuditTable,
   writeAuditEvent,
   getLatestAuditEventByType,
 };

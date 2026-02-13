@@ -3,12 +3,15 @@ const { createServer } = require('../src/server');
 const { endPool } = require('../src/db');
 const {
   HELLO_AUDIT_EVENT_TYPE,
+  writeAuditEvent,
   getLatestAuditEventByType,
 } = require('../src/audit');
 
+const ROLE_ASSIGNED_EVENT_TYPE = 'ROLE_ASSIGNED';
+
 jest.setTimeout(30000); // allow time for DB + request
 
-describe('HELLO_AUDIT_EVENT via /version', () => {
+describe('audit integration', () => {
   let server;
   let port;
 
@@ -38,7 +41,7 @@ describe('HELLO_AUDIT_EVENT via /version', () => {
     await endPool();
   });
 
-  test('writes a hello audit event when /version is called', (done) => {
+  test('writes a HELLO_AUDIT_EVENT when /version is called', (done) => {
     http
       .get(`http://127.0.0.1:${port}/version`, (res) => {
         expect(res.statusCode).toBe(200);
@@ -52,7 +55,9 @@ describe('HELLO_AUDIT_EVENT via /version', () => {
             const parsed = JSON.parse(data);
             expect(parsed).toHaveProperty('version');
 
-            const event = await getLatestAuditEventByType(HELLO_AUDIT_EVENT_TYPE);
+            const event = await getLatestAuditEventByType(
+              HELLO_AUDIT_EVENT_TYPE,
+            );
 
             expect(event).not.toBeNull();
             expect(event.event_type).toBe(HELLO_AUDIT_EVENT_TYPE);
@@ -69,5 +74,29 @@ describe('HELLO_AUDIT_EVENT via /version', () => {
       .on('error', (err) => {
         done(err);
       });
+  });
+
+  test('writeAuditEvent persists ROLE_ASSIGNED audit events', async () => {
+    const payload = {
+      meta: {
+        actor: 'admin_1',
+        target: 'ae_1',
+      },
+      role_assignment: {
+        role_key: 'AE',
+        scope_type: 'QIG',
+        scope_id: 'Q1',
+      },
+    };
+
+    await writeAuditEvent(ROLE_ASSIGNED_EVENT_TYPE, payload);
+
+    const event = await getLatestAuditEventByType(ROLE_ASSIGNED_EVENT_TYPE);
+
+    expect(event).not.toBeNull();
+    expect(event.event_type).toBe(ROLE_ASSIGNED_EVENT_TYPE);
+    expect(event.payload).toBeDefined();
+    expect(event.payload.meta).toEqual(payload.meta);
+    expect(event.payload.role_assignment).toEqual(payload.role_assignment);
   });
 });

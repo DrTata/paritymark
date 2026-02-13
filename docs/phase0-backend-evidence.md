@@ -1,108 +1,72 @@
-# Phase 0 Backend Evidence — Audit & Health
+# Phase 0 Backend Evidence Pack (API)
 
-**Project**: ParityMark  
-**Phase**: 0 — Minimal backend audit scaffolding + health/version endpoints  
-**Scope**: `apps/api` only; no frontend/UI changes in this phase.
+This document captures **Phase 0** backend behaviour and evidence for the API service (`apps/api`).
 
----
+Phase 0 focuses on three core flows:
 
-## 1. Objective & Scope
+1. **Health checks**  
+   - Non-DB health (`/health` in default mode)  
+   - DB-backed health (`/health` with DB check enabled)
 
-### 1.1 Objective
+2. **Version endpoint + hello audit emission**  
+   - `/version` returns version metadata  
+   - When enabled, each call emits a `HELLO_AUDIT_EVENT` into Postgres
 
-Implement and verify a minimal backend audit and health/version foundation:
+3. **Hello audit evidence endpoint**  
+   - `/audit/hello/latest` surfaces the latest `HELLO_AUDIT_EVENT` for demo/audit use
 
-- `/health` endpoint:
-  - Simple (non-DB) mode.
-  - DB-backed mode (Postgres health check).
-- `/version` endpoint:
-  - Returns API service metadata.
-  - Optionally emits a `HELLO_AUDIT_EVENT` into Postgres when enabled.
-- `/audit/hello/latest` endpoint:
-  - Dev-only evidence endpoint to read back the latest `HELLO_AUDIT_EVENT`.
-
-This file documents what is **actually implemented and tested** in Phase 0, and what is **explicitly not yet implemented**.
-
-### 1.2 Out of Scope (Phase 0)
-
-The following are **not** implemented or changed in this phase:
-
-- No new web UI pages or flows.
-- No RBAC/auth changes; all endpoints remain unauthenticated.
-- No ConfigVersion/Deployment/ConfigArtifact implementation.
-- No Cucumber/acceptance tests added or modified.
-- No allocation/marking/standardisation/seeding/exports/multilingual features.
-- No infra changes beyond existing GitHub Actions workflows (except adding the `docs-check` job that enforces the existence of this file).
+All flows are backed by **unit tests, integration tests, acceptance tests, and CI jobs**. Phase 0 is **pre-RBAC**: these endpoints are unauthenticated and intended for dev/CI/staging only.
 
 ---
 
-## 2. Implemented Behaviour (Backend)
+## 1. Endpoints & Flags Overview
 
-### 2.1 `/health` (apps/api)
+### 1.1 Endpoints
 
-- **Handler**: `apps/api/src/health.js`  
-- **DB helper**: `apps/api/src/db.js`  
+| Endpoint                 | Purpose                                             |
+|--------------------------|-----------------------------------------------------|
+| `GET /health`           | Basic and DB-backed health checks                   |
+| `GET /version`          | Service metadata + optional hello audit emission    |
+| `GET /audit/hello/latest` | Evidence endpoint for latest `HELLO_AUDIT_EVENT` |
 
-#### Behaviour
+### 1.2 Key environment flags
 
-- **Default (non-DB) mode** (`API_USE_DB_HEALTH !== 'true'`):
-
-  - `GET /health` → `200` with:
-
-    ```json
-    { "status": "ok" }
-    ```
-
-- **DB-backed mode** (`API_USE_DB_HEALTH='true'` and valid DB env vars):
-
-  - Required environment variables:
-
-    - `DB_HOST`
-    - `DB_PORT`
-    - `DB_USER`
-    - `DB_PASSWORD`
-    - `DB_NAME`
-
-  - If Postgres is reachable:
-
-    ```json
-    { "status": "ok", "db": "up" }
-    ```
-
-  - If the Postgres health check fails:
-
-    ```json
-    { "status": "error", "db": "down" }
-    ```
-
-  - HTTP status:
-
-    - `200` when DB is healthy.
-    - `500` when DB is unhealthy or unreachable in DB-backed mode.
-
-#### DB lifecycle helper (`apps/api/src/db.js`)
-
-- Exports a singleton `pool` (pg `Pool` instance).
-- `checkDbHealth()` executes `SELECT 1` to verify connectivity.
-- `endPool()` cleanly closes the pool:
-  - Guarded by a `poolEnded` flag so multiple calls are safe.
-  - Used in integration tests’ `afterAll` to avoid Jest open-handle warnings/hangs.
+| Flag                          | Type    | Effect                                                                                                  |
+|-------------------------------|---------|---------------------------------------------------------------------------------------------------------|
+| `API_USE_DB_HEALTH`           | boolean | When `'true'`, `/health` performs a DB check and returns `"db": "up" \| "down"`                         |
+| `ENABLE_HELLO_AUDIT`          | boolean | When `'true'`, `/version` writes `HELLO_AUDIT_EVENT` audit rows                                         |
+| `ENABLE_HELLO_AUDIT_ENDPOINT` | boolean | When `'true'`, enables `/audit/hello/latest`; otherwise the route behaves as not present (404)         |
+| `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` | string | Connection config for Postgres                                    |
+| `NODE_ENV`                    | string  | Environment label; returned as `env` field in `/version` payload                                       |
 
 ---
 
-### 2.2 `/version` and `HELLO_AUDIT_EVENT` (apps/api)
+## 2. Flow 1 – `/health` (non-DB and DB-backed)
 
-- **Handler**: `apps/api/src/version.js`  
-- **Audit module**: `apps/api/src/audit.js`  
+### 2.1 Purpose
 
-#### Base `/version` behaviour
+Show that the API is alive, and when configured, confirm connectivity to Postgres. Phase 0 provides:
 
-- `GET /version` returns JSON derived from `apps/api/package.json` and environment:
+- A **simple health** mode (no DB dependency).
+- A **DB-backed health** mode that proves the Postgres check works end-to-end.
+
+### 2.2 Endpoint
+
+- **Method:** `GET`
+- **Path:** `/health`
+
+### 2.3 Behaviour – Non-DB mode (default)
+
+**Configuration**
+
+- `API_USE_DB_HEALTH` is **unset** or not exactly `'true'`.
+
+**Response**
+
+- **Status:** `200`
+- **Body:**
 
   ```json
   {
-    "service": "api",
-    "name": "api",
-    "version": "0.1.0",
-    "env": "development"
+    "status": "ok"
   }

@@ -196,3 +196,26 @@ jobs:
             echo "::error ::docs/phase0-backend-evidence.md is missing"
             exit 1
           fi
+
+  dependency-scan:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run dependency audit
+        run: pnpm audit
