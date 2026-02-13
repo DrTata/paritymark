@@ -30,7 +30,7 @@ const {
 /**
  * Clear all config-related data for a stable baseline.
  * This mirrors the approach used in config_model.steps.js, but is scoped for
- * identity/RBAC scenarios.
+ * identity/RBAC + assessment-setup scenarios.
  */
 async function clearAllConfigData() {
   await ensureConfigTables();
@@ -126,7 +126,7 @@ async function clearAllIdentityData() {
 }
 
 /**
- * Ensure an identity/RBAC context exists on the Cucumber World for this scenario.
+ * Ensure an identity/RBAC + assessment context exists on the Cucumber World for this scenario.
  */
 function ensureIdentityContext(world, deploymentCode) {
   if (!world.identityContext) {
@@ -136,10 +136,10 @@ function ensureIdentityContext(world, deploymentCode) {
       rolesByName: {},        // "ADMIN", "AE" -> role rows
       seriesByName: {},       // "S1" -> series record
       papersByName: {},       // "P1" -> paper record
-      qigsByName: {},         // "Q1" -> QIG record
+      qigsByName: {},         // "Q1" -> QIG record (+ items)
       aeAssignmentsByQig: {}, // "Q1" -> ["ae_1", ...]
       lastViewAttempt: null,  // { userName, qigName, allowed }
-      auditEvents: [],        // [{ eventType, actorName, targetUserName, qigName, timestamp }]
+      auditEvents: [],        // [{ eventType, actorName, ... }]
     };
   } else {
     if (!world.identityContext.deploymentCode && deploymentCode) {
@@ -199,7 +199,6 @@ Given(
     );
 
     await assignRoleToUser(user.id, adminRole.id);
-    // FIX: pass the permission ID, not the whole object
     await assignPermissionToRole(adminRole.id, adminPerm.id);
 
     ctx.usersByName[userName] = user;
@@ -341,9 +340,103 @@ When(
       seriesName: paper.seriesName,
       deploymentCode: ctx.deploymentCode || 'D1',
       createdBy: actorName,
+      items: [],
     };
 
     ctx.qigsByName[qigName] = qig;
+  },
+);
+
+/**
+ * Step: "<actor>" creates Item "<itemName>" with max mark <maxMark> in QIG "<qigName>"
+ */
+When(
+  '{string} creates Item {string} with max mark {int} in QIG {string}',
+  async function (actorName, itemName, maxMark, qigName) {
+    const ctx = ensureIdentityContext(
+      this,
+      (this.identityContext && this.identityContext.deploymentCode) || 'D1',
+    );
+
+    const actor = ctx.usersByName[actorName];
+    assert.ok(
+      actor,
+      'Expected actor "' +
+        actorName +
+        '" to exist before creating Item "' +
+        itemName +
+        '"',
+    );
+
+    const qig = ctx.qigsByName[qigName];
+    assert.ok(
+      qig,
+      'Expected QIG "' +
+        qigName +
+        '" to exist before creating Item "' +
+        itemName +
+        '"',
+    );
+
+    if (!Array.isArray(qig.items)) {
+      qig.items = [];
+    }
+
+    const item = {
+      name: itemName,
+      maxMark: maxMark,
+      qigName: qigName,
+      paperName: qig.paperName,
+      seriesName: qig.seriesName,
+      deploymentCode: ctx.deploymentCode || 'D1',
+      createdBy: actorName,
+    };
+
+    qig.items.push(item);
+
+    // Record an assessment-structure audit-style event in the scenario context.
+    ctx.auditEvents.push({
+      eventType: 'ASSESSMENT_STRUCTURE_UPDATED',
+      actorName: actorName,
+      qigName: qigName,
+      itemName: itemName,
+      maxMark: maxMark,
+      timestamp: new Date().toISOString(),
+    });
+  },
+);
+
+/**
+ * Step: QIG "<qigName>" contains item "<itemName>"
+ */
+Then(
+  'QIG {string} contains item {string}',
+  function (qigName, itemName) {
+    const ctx = ensureIdentityContext(
+      this,
+      (this.identityContext && this.identityContext.deploymentCode) || 'D1',
+    );
+
+    const qig = ctx.qigsByName[qigName];
+    assert.ok(
+      qig,
+      'Expected QIG "' + qigName + '" to exist when checking its items',
+    );
+
+    const items = Array.isArray(qig.items) ? qig.items : [];
+    const match = items.find(function (i) {
+      return i.name === itemName;
+    });
+
+    assert.ok(
+      match,
+      'Expected QIG "' +
+        qigName +
+        '" to contain item "' +
+        itemName +
+        '", but items were: ' +
+        JSON.stringify(items),
+    );
   },
 );
 
@@ -459,6 +552,7 @@ Given(
       seriesName: seriesName,
       deploymentCode: deploymentCode,
       createdBy: userName,
+      items: [],
     };
 
     // AE role + qig.view permission.

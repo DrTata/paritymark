@@ -1,4 +1,5 @@
 const http = require('http');
+const crypto = require('crypto');
 const { healthHandler } = require('./health');
 const { checkDbHealth } = require('./db');
 const { versionHandler } = require('./version');
@@ -17,15 +18,21 @@ const {
 } = require('./config');
 const { enforcePermission, getOrCreateUserForRequest } = require('./authz');
 const { getPermissionsForUser } = require('./identity');
-const { v4: uuidv4 } = require('uuid'); // To generate a requestId
+
+// Generate a requestId without relying on ESM-only uuid package
+function generateRequestId() {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return crypto.randomBytes(16).toString('hex');
+}
 
 // Function to log events
 function logRequest(req, res, startTime) {
   const duration = Date.now() - startTime;
-  const requestId = req.headers['x-request-id'] || uuidv4(); // Generate new requestId if missing
-  res.setHeader('X-Request-Id', requestId); // Attach requestId to the response
+  const requestId = req.headers['x-request-id'] || generateRequestId();
+  res.setHeader('X-Request-Id', requestId);
 
-  // Log basic request and response details
   console.log({
     method: req.method,
     path: req.url,
@@ -73,7 +80,7 @@ function readJsonBody(req) {
 function createServer() {
   return http.createServer((req, res) => {
     const startTime = Date.now();
-    const requestId = logRequest(req, res, startTime); // Log request and get requestId
+    const requestId = logRequest(req, res, startTime);
 
     if (req.method === 'GET' && req.url === '/version') {
       return versionHandler(req, res);
@@ -98,7 +105,6 @@ function createServer() {
           }
         })
         .catch((err) => {
-          // Log DB health error with requestId
           console.error('DB health check failed', { error: err, requestId });
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
@@ -130,8 +136,10 @@ function createServer() {
           res.end(JSON.stringify({ event }));
         })
         .catch((err) => {
-          // Log error with requestId
-          console.error('Failed to fetch hello audit event', { error: err, requestId });
+          console.error('Failed to fetch hello audit event', {
+            error: err,
+            requestId,
+          });
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: 'internal_error' }));
@@ -195,7 +203,6 @@ function createServer() {
         const deploymentCode = decodeURIComponent(segments[1]);
         const permissionKey = 'config.view';
 
-        // Enforce RBAC for viewing active config.
         enforcePermission(req, res, permissionKey)
           .then((allowed) => {
             if (!allowed) {
@@ -215,7 +222,9 @@ function createServer() {
 
                 if (result.notFound === 'active_config') {
                   res.statusCode = 404;
-                  res.end(JSON.stringify({ error: 'active_config_not_found' }));
+                  res.end(
+                    JSON.stringify({ error: 'active_config_not_found' }),
+                  );
                   return;
                 }
 
@@ -229,8 +238,10 @@ function createServer() {
                 );
               })
               .catch((err) => {
-                // Log error with requestId
-                console.error('Failed to fetch active config', { error: err, requestId });
+                console.error('Failed to fetch active config', {
+                  error: err,
+                  requestId,
+                });
                 res.statusCode = 500;
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ error: 'internal_error' }));
@@ -293,7 +304,9 @@ function createServer() {
 
                 if (result.notFound === 'config_version') {
                   res.statusCode = 404;
-                  res.end(JSON.stringify({ error: 'config_version_not_found' }));
+                  res.end(
+                    JSON.stringify({ error: 'config_version_not_found' }),
+                  );
                   return;
                 }
 
@@ -351,7 +364,6 @@ function createServer() {
               return;
             }
 
-            // Now parse JSON body and create a draft config version.
             (async () => {
               let parsedBody;
               try {
@@ -387,7 +399,7 @@ function createServer() {
                 } else if (user && user.display_name) {
                   createdBy = user.display_name;
                 }
-              } catch (err) {
+              } catch (_err) {
                 // If we fail to resolve the user here, continue with null createdBy.
               }
 
@@ -465,7 +477,6 @@ function createServer() {
                 return;
               }
 
-              // Upsert artifacts for this draft version
               const upsertEntries = Object.entries(artifacts || {});
               try {
                 for (const [artifactType, artifactPayload] of upsertEntries) {
@@ -540,6 +551,7 @@ function createServer() {
 if (require.main === module) {
   const port = process.env.PORT || 4000;
   const server = createServer();
+  // eslint-disable-next-line no-console
   server.listen(port, () => {
     // eslint-disable-next-line no-console
     console.log(`API server listening on http://localhost:${port}`);
