@@ -18,6 +18,7 @@ const {
 } = require('./config');
 const { enforcePermission, getOrCreateUserForRequest } = require('./authz');
 const { getPermissionsForUser } = require('./identity');
+const { getAssessmentTreeForDeployment } = require('./assessment');
 
 // Generate a requestId without relying on ESM-only uuid package
 function generateRequestId() {
@@ -80,6 +81,27 @@ function readJsonBody(req) {
 function createServer() {
   return http.createServer((req, res) => {
     const startTime = Date.now();
+
+    // Basic CORS support so the web dev server (different port) and
+    // Playwright-run browsers can call the API directly.
+    const origin = req.headers.origin || '*';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, x-user-external-id, x-user-display-name',
+    );
+    res.setHeader(
+      'Access-Control-Allow-Methods',
+      'GET,POST,OPTIONS',
+    );
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
     const requestId = logRequest(req, res, startTime);
 
     if (req.method === 'GET' && req.url === '/version') {
@@ -186,6 +208,84 @@ function createServer() {
         });
 
       return;
+    }
+
+    // Assessment-related endpoints
+    if (req.url && req.url.startsWith('/assessment/')) {
+      const [path] = req.url.split('?');
+      const segments = path.split('/').filter(Boolean); // e.g. ["assessment", "D1", "tree"]
+
+      // GET /assessment/:deploymentCode/tree
+      if (
+        req.method === 'GET' &&
+        segments.length === 3 &&
+        segments[0] === 'assessment' &&
+        segments[2] === 'tree'
+      ) {
+        const deploymentCode = decodeURIComponent(segments[1]);
+        const permissionKey = 'assessment.view';
+
+        enforcePermission(req, res, permissionKey)
+          .then((allowed) => {
+            if (!allowed) {
+              // Response already written (401/403).
+              return;
+            }
+
+            return getDeploymentByCode(deploymentCode)
+              .then((deployment) => {
+                if (!deployment || deployment.archived_at) {
+                  res.statusCode = 404;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'deployment_not_found' }));
+                  return;
+                }
+
+                return getAssessmentTreeForDeployment(deployment.id)
+                  .then((seriesTree) => {
+                    res.statusCode = 200;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(
+                      JSON.stringify({
+                        deployment: {
+                          id: deployment.id,
+                          code: deployment.code,
+                          name: deployment.name,
+                        },
+                        series: seriesTree,
+                      }),
+                    );
+                  });
+              })
+              .catch((err) => {
+                console.error('Failed to fetch assessment tree', {
+                  error: err,
+                  requestId,
+                });
+                if (!res.headersSent) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: 'internal_error' }));
+                }
+              });
+          })
+          .catch((err) => {
+            console.error(
+              'Failed to enforce permission for assessment endpoint',
+              {
+                error: err,
+                requestId,
+              },
+            );
+            if (!res.headersSent) {
+              res.statusCode = 500;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'internal_error' }));
+            }
+          });
+
+        return;
+      }
     }
 
     // Config-related endpoints

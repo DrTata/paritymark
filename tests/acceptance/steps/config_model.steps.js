@@ -153,7 +153,8 @@ async function seedDeploymentWithoutActiveConfig(deploymentCode) {
 }
 
 /**
- * Seed the database with an ACTIVE config for deployment D1.
+ * Seed the database with an ACTIVE config for deployment D1,
+ * including permission_matrix, branding, and ui locale artifacts.
  */
 async function seedActiveConfigForD1() {
   await clearAllConfigData();
@@ -196,7 +197,7 @@ async function seedActiveConfigForD1() {
   ]);
   const configVersionId = configVersionResult.rows[0].id;
 
-  // Insert permission_matrix and branding artifacts
+  // Insert permission_matrix, branding, and ui artifacts
   const insertArtifactSql = `
     INSERT INTO ${CONFIG_ARTIFACTS_TABLE_NAME} (
       config_version_id,
@@ -204,7 +205,7 @@ async function seedActiveConfigForD1() {
       payload
     )
     VALUES ($1, $2, $3)
-  `;
+ `;
 
   const permissionMatrix = {
     roles: ['ASSISTANT', 'TEAM_LEADER'],
@@ -219,6 +220,10 @@ async function seedActiveConfigForD1() {
     primaryColor: '#0044cc',
   };
 
+  const ui = {
+    locale: 'fr-FR',
+  };
+
   await pool.query(insertArtifactSql, [
     configVersionId,
     'permission_matrix',
@@ -229,6 +234,7 @@ async function seedActiveConfigForD1() {
     'branding',
     branding,
   ]);
+  await pool.query(insertArtifactSql, [configVersionId, 'ui', ui]);
 }
 
 /**
@@ -414,7 +420,7 @@ Then(
 );
 
 Then(
-  'the JSON config response contains an active config for deployment {string} with permission_matrix and branding artifacts',
+  'the JSON config response contains an active config for deployment {string} with permission_matrix, branding, and ui locale artifacts',
   function (deploymentCode) {
     assert.ok(
       typeof lastConfigBody === 'string',
@@ -485,6 +491,23 @@ Then(
       `Expected artifacts to include "branding", got: ${Object.keys(
         artifacts,
       ).join(', ')}`,
+    );
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(artifacts, 'ui'),
+      `Expected artifacts to include "ui", got: ${Object.keys(
+        artifacts,
+      ).join(', ')}`,
+    );
+
+    const ui = artifacts.ui;
+    assert.ok(
+      ui && typeof ui === 'object',
+      `Expected "ui" artifact to be an object, got: ${JSON.stringify(ui)}`,
+    );
+    assert.strictEqual(
+      ui.locale,
+      'fr-FR',
+      `Expected ui.locale to be "fr-FR", got ${JSON.stringify(ui.locale)}`,
     );
   },
 );

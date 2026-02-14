@@ -1,18 +1,33 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import DebugPage from '@/app/debug/page';
-import * as api from '@/lib/apiIdentity';
+import * as apiIdentity from '@/lib/apiIdentity';
+import * as apiConfig from '@/lib/apiConfig';
 
 jest.mock('@/lib/apiIdentity');
+jest.mock('@/lib/apiConfig');
 
-const mockedFetch = api.fetchApiIdentity as jest.Mock;
+const mockedFetchIdentity = apiIdentity.fetchApiIdentity as jest.Mock;
+const mockedFetchActiveConfig = apiConfig.fetchActiveConfig as jest.Mock;
 
 describe('DebugPage', () => {
   test('renders unauthenticated identity summary and links', async () => {
-    mockedFetch.mockResolvedValue({
+    mockedFetchIdentity.mockResolvedValue({
       status: 'unauthenticated',
       user: null,
       permissions: [],
+    });
+
+    mockedFetchActiveConfig.mockResolvedValue({
+      kind: 'ok',
+      deployment: { id: 1, code: 'D1', name: 'Example Deployment' },
+      configVersion: {
+        id: 1,
+        deployment_id: 1,
+        version_number: 1,
+        status: 'ACTIVE',
+      },
+      artifacts: {},
     });
 
     const ui = await DebugPage();
@@ -31,7 +46,7 @@ describe('DebugPage', () => {
   });
 
   test('renders authenticated identity summary with permissions', async () => {
-    mockedFetch.mockResolvedValue({
+    mockedFetchIdentity.mockResolvedValue({
       status: 'authenticated',
       user: {
         id: 1,
@@ -39,6 +54,18 @@ describe('DebugPage', () => {
         displayName: 'Debug User',
       },
       permissions: ['config.view', 'other.permission'],
+    });
+
+    mockedFetchActiveConfig.mockResolvedValue({
+      kind: 'ok',
+      deployment: { id: 1, code: 'D1', name: 'Example Deployment' },
+      configVersion: {
+        id: 1,
+        deployment_id: 1,
+        version_number: 1,
+        status: 'ACTIVE',
+      },
+      artifacts: {},
     });
 
     const ui = await DebugPage();
@@ -58,7 +85,19 @@ describe('DebugPage', () => {
   });
 
   test('renders error message when identity fetch throws', async () => {
-    mockedFetch.mockRejectedValue(new Error('Boom'));
+    mockedFetchIdentity.mockRejectedValue(new Error('Boom'));
+
+    mockedFetchActiveConfig.mockResolvedValue({
+      kind: 'ok',
+      deployment: { id: 1, code: 'D1', name: 'Example Deployment' },
+      configVersion: {
+        id: 1,
+        deployment_id: 1,
+        version_number: 1,
+        status: 'ACTIVE',
+      },
+      artifacts: {},
+    });
 
     const ui = await DebugPage();
     render(ui as React.ReactElement);
@@ -66,5 +105,65 @@ describe('DebugPage', () => {
     const msg = await screen.findByTestId('debug-identity-error');
     expect(msg.textContent).toContain('Failed to load identity');
     expect(msg.textContent).toContain('Boom');
+  });
+
+  test('uses locale from active config artifacts to render French debug messages', async () => {
+    // Identity: unauthenticated is fine — we care about the debug copy/i18n here.
+    mockedFetchIdentity.mockResolvedValue({
+      status: 'unauthenticated',
+      user: null,
+      permissions: [],
+    });
+
+    // Active config includes ui.locale = 'fr-FR'
+    mockedFetchActiveConfig.mockResolvedValue({
+      kind: 'ok',
+      deployment: { id: 1, code: 'D1', name: 'Example Deployment' },
+      configVersion: {
+        id: 1,
+        deployment_id: 1,
+        version_number: 1,
+        status: 'ACTIVE',
+      },
+      artifacts: {
+        ui: {
+          locale: 'fr-FR',
+        },
+      },
+    });
+
+    const ui = await DebugPage();
+    render(ui as React.ReactElement);
+
+    // Title from messages.debug.title for fr-FR
+    const heading = await screen.findByRole('heading', { level: 1 });
+    expect(heading.textContent).toContain('Tableau de débogage du système');
+
+    // Identity section heading in French
+    const identityHeading = await screen.findByRole('heading', {
+      level: 2,
+      name: 'Identité',
+    });
+    expect(identityHeading.textContent).toBe('Identité');
+
+    // Panels heading in French
+    const panelsHeading = await screen.findByRole('heading', {
+      level: 2,
+      name: 'Panneaux',
+    });
+    expect(panelsHeading.textContent).toBe('Panneaux');
+
+    // Link labels from messages.debug.* in fr-FR
+    const links = await screen.findAllByRole('link');
+    const linkTexts = links.map((link) => link.textContent);
+
+    expect(linkTexts).toEqual(
+      expect.arrayContaining([
+        "État de l'API",
+        "Version de l'API",
+        'Identité & permissions',
+        'Visionneuse de config active',
+      ]),
+    );
   });
 });

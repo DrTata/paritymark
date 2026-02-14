@@ -1,6 +1,6 @@
 const http = require('http');
 const { createServer } = require('../src/server');
-const { pool } = require('../src/db');
+const { pool, endPool } = require('../src/db');
 const {
   ensureConfigTables,
   DEPLOYMENTS_TABLE_NAME,
@@ -109,6 +109,8 @@ describe('Config activation HTTP endpoint with RBAC', () => {
     if (server && server.close) {
       await new Promise((resolve) => server.close(() => resolve()));
     }
+    // Close DB pool created for this test file so Jest can exit cleanly.
+    await endPool();
   });
 
   test('returns 401 unauthenticated when no user headers are provided', async () => {

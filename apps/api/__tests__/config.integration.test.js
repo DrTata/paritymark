@@ -75,7 +75,7 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
     expect(result.notFound).toBe('active_config');
   });
 
-  test('returns active config with artifacts for an existing deployment', async () => {
+  test('returns active config with artifacts (including ui.locale) for an existing deployment', async () => {
     // Insert a deployment
     const insertDeploymentSql = `
       INSERT INTO ${DEPLOYMENTS_TABLE_NAME} (code, name)
@@ -114,7 +114,7 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
     ]);
     const configVersionId = configVersionResult.rows[0].id;
 
-    // Insert a couple of artifacts for this config version
+    // Insert a set of artifacts for this config version, including ui.locale
     const insertArtifactSql = `
       INSERT INTO ${CONFIG_ARTIFACTS_TABLE_NAME} (
         config_version_id,
@@ -137,6 +137,10 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
       primaryColor: '#0044cc',
     };
 
+    const ui = {
+      locale: 'fr-FR',
+    };
+
     await pool.query(insertArtifactSql, [
       configVersionId,
       'permission_matrix',
@@ -147,6 +151,7 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
       'branding',
       branding,
     ]);
+    await pool.query(insertArtifactSql, [configVersionId, 'ui', ui]);
 
     const result = await getActiveConfigForDeploymentCode(deploymentCode);
 
@@ -164,10 +169,15 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
       created_by: createdBy,
     });
 
+    // Artifacts map should include all three entries and preserve payloads
     expect(result.artifacts).toHaveProperty('permission_matrix');
     expect(result.artifacts).toHaveProperty('branding');
+    expect(result.artifacts).toHaveProperty('ui');
+
     expect(result.artifacts.permission_matrix).toEqual(permissionMatrix);
     expect(result.artifacts.branding).toEqual(branding);
+    expect(result.artifacts.ui).toEqual(ui);
+    expect(result.artifacts.ui.locale).toBe('fr-FR');
   });
 
   test('activation helper returns notFound=config_version when target version does not exist', async () => {

@@ -25,7 +25,7 @@ Feature: Config model active config resolution
     And I am an authorised config viewer
     When I GET "/config/D1/active" from the config API server
     Then the config response status code is 200
-    And the JSON config response contains an active config for deployment "D1" with permission_matrix and branding artifacts
+    And the JSON config response contains an active config for deployment "D1" with permission_matrix, branding, and ui locale artifacts
 
   @config @phase1 @rbac
   Scenario: Unauthenticated caller cannot access active config

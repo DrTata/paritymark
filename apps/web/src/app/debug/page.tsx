@@ -1,33 +1,59 @@
 import { fetchApiIdentity } from '@/lib/apiIdentity';
+import { fetchActiveConfig, type ConfigActiveResult } from '@/lib/apiConfig';
+import { getMessages, defaultLocale, type Locale } from '../../i18n';
 
 export const dynamic = 'force-dynamic';
+
+const DEFAULT_DEPLOYMENT_CODE = 'D1';
 
 export default async function DebugPage() {
   let me;
   let error: string | null = null;
+  let locale: Locale = defaultLocale;
 
+  // Identity fetch: if this fails, we show an identity error.
   try {
     me = await fetchApiIdentity();
   } catch (err) {
     error = err instanceof Error ? err.message : 'Unknown error';
   }
 
+  // Config fetch for locale: best-effort only, never affects identity error state.
+  try {
+    const active = await fetchActiveConfig(DEFAULT_DEPLOYMENT_CODE);
+
+    if (active && (active as ConfigActiveResult).kind === 'ok') {
+      const artifacts = (active as any)?.artifacts;
+      const maybeLocale = artifacts?.ui?.locale;
+
+      if (maybeLocale === 'en-GB' || maybeLocale === 'fr-FR') {
+        locale = maybeLocale;
+      }
+    }
+  } catch {
+    // Swallow config/i18n errors: debug page should still render
+    // using the default locale and identity state.
+  }
+
+  const messages = getMessages(locale);
+  const t = messages.debug;
+
   return (
     <main style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif' }}>
-      <h1>System debug dashboard</h1>
+      <h1>{t.title}</h1>
 
       <section style={{ marginTop: '1.5rem' }}>
-        <h2>Identity</h2>
+        <h2>{t.identityHeading}</h2>
 
         {error ? (
           <p data-testid="debug-identity-error">
-            Failed to load identity: {error}
+            {t.errorPrefix}: {error}
           </p>
         ) : !me ? (
-          <p>Loading identity...</p>
+          <p>{t.loading}</p>
         ) : me.status === 'unauthenticated' ? (
           <p data-testid="debug-identity-unauthenticated">
-            You are not authenticated. No user or permissions are available.
+            {t.unauthenticated}
           </p>
         ) : (
           <div data-testid="debug-identity-authenticated">
@@ -57,19 +83,19 @@ export default async function DebugPage() {
       </section>
 
       <section style={{ marginTop: '2rem' }}>
-        <h2>Panels</h2>
+        <h2>{t.panelsHeading}</h2>
         <ul data-testid="debug-links">
           <li>
-            <a href="/health">API health</a>
+            <a href="/health">{t.linkHealthLabel}</a>
           </li>
           <li>
-            <a href="/version">API version</a>
+            <a href="/version">{t.linkVersionLabel}</a>
           </li>
           <li>
-            <a href="/identity">Identity &amp; permissions</a>
+            <a href="/identity">{t.linkIdentityLabel}</a>
           </li>
           <li>
-            <a href="/config">Active config viewer</a>
+            <a href="/config">{t.linkConfigLabel}</a>
           </li>
         </ul>
       </section>

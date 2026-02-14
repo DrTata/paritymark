@@ -1,5 +1,14 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000';
+export const API_BASE_URL =
+  typeof window === 'undefined'
+    ? process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000'
+    : '';
+
+function makeUrl(path: string): string {
+  if (API_BASE_URL) {
+    return API_BASE_URL + path;
+  }
+  return path;
+}
 
 export type ConfigDeployment = {
   id: number;
@@ -57,114 +66,23 @@ export type ConfigActivationResult =
       configVersion: ConfigVersion;
     };
 
+type ErrorBody = {
+  error?: string;
+};
+
+function isErrorBody(value: unknown): value is ErrorBody {
+  return typeof value === 'object' && value !== null && 'error' in value;
+}
+
 export async function fetchActiveConfig(
   deploymentCode: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<ConfigActiveResult> {
   const res = await fetch(
-    API_BASE_URL + '/config/' + encodeURIComponent(deploymentCode) + '/active',
-    { cache: 'no-store' },
-  );
-
-  if (res.status === 401) {
-    return { kind: 'unauthenticated' };
-  }
-
-  if (res.status === 403) {
-    return { kind: 'forbidden' };
-  }
-
-  if (!res.ok) {
-    let body: any = null;
-    try {
-      body = await res.json();
-    } catch (_err) {
-      // ignore JSON parse errors for non-JSON bodies
-    }
-
-    if (res.status === 404 && body && body.error === 'deployment_not_found') {
-      return { kind: 'deployment_not_found', deploymentCode };
-    }
-
-    if (res.status === 404 && body && body.error === 'active_config_not_found') {
-      return { kind: 'active_config_not_found', deploymentCode };
-    }
-
-    throw new Error(
-      'Failed to fetch active config: ' + res.status + ' ' + res.statusText,
-    );
-  }
-
-  const body = await res.json();
-
-  return {
-    kind: 'ok',
-    deployment: body.deployment as ConfigDeployment,
-    configVersion: body.configVersion as ConfigVersion,
-    artifacts: (body.artifacts || {}) as ConfigArtifacts,
-  };
-}
-
-export async function fetchConfigVersions(
-  deploymentCode: string,
-): Promise<ConfigVersionsResult> {
-  const res = await fetch(
-    API_BASE_URL +
-      '/config/' +
-      encodeURIComponent(deploymentCode) +
-      '/versions',
-    { cache: 'no-store' },
-  );
-
-  if (res.status === 401) {
-    return { kind: 'unauthenticated' };
-  }
-
-  if (res.status === 403) {
-    return { kind: 'forbidden' };
-  }
-
-  if (!res.ok) {
-    let body: any = null;
-    try {
-      body = await res.json();
-    } catch (_err) {
-      // ignore JSON parse errors for non-JSON bodies
-    }
-
-    if (res.status === 404 && body && body.error === 'deployment_not_found') {
-      return { kind: 'deployment_not_found', deploymentCode };
-    }
-
-    throw new Error(
-      'Failed to fetch config versions: ' + res.status + ' ' + res.statusText,
-    );
-  }
-
-  const body = await res.json();
-
-  return {
-    kind: 'ok',
-    deployment: body.deployment as ConfigDeployment,
-    versions: Array.isArray(body.versions)
-      ? (body.versions as ConfigVersion[])
-      : [],
-  };
-}
-
-export async function activateConfigVersion(
-  deploymentCode: string,
-  versionNumber: number,
-): Promise<ConfigActivationResult> {
-  const res = await fetch(
-    API_BASE_URL +
-      '/config/' +
-      encodeURIComponent(deploymentCode) +
-      '/versions/' +
-      String(versionNumber) +
-      '/activate',
+    makeUrl('/config/' + encodeURIComponent(deploymentCode) + '/active'),
     {
-      method: 'POST',
       cache: 'no-store',
+      headers: extraHeaders,
     },
   );
 
@@ -177,20 +95,148 @@ export async function activateConfigVersion(
   }
 
   if (!res.ok) {
-    let body: any = null;
+    let body: unknown = null;
     try {
       body = await res.json();
-    } catch (_err) {
+    } catch {
       // ignore JSON parse errors for non-JSON bodies
     }
 
-    if (res.status === 404 && body && body.error === 'deployment_not_found') {
+    if (
+      res.status === 404 &&
+      isErrorBody(body) &&
+      body.error === 'deployment_not_found'
+    ) {
       return { kind: 'deployment_not_found', deploymentCode };
     }
 
     if (
       res.status === 404 &&
-      body &&
+      isErrorBody(body) &&
+      body.error === 'active_config_not_found'
+    ) {
+      return { kind: 'active_config_not_found', deploymentCode };
+    }
+
+    throw new Error(
+      'Failed to fetch active config: ' + res.status + ' ' + res.statusText,
+    );
+  }
+
+  const body = (await res.json()) as {
+    deployment: ConfigDeployment;
+    configVersion: ConfigVersion;
+    artifacts?: ConfigArtifacts;
+  };
+
+  return {
+    kind: 'ok',
+    deployment: body.deployment,
+    configVersion: body.configVersion,
+    artifacts: body.artifacts || {},
+  };
+}
+
+export async function fetchConfigVersions(
+  deploymentCode: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<ConfigVersionsResult> {
+  const res = await fetch(
+    makeUrl('/config/' + encodeURIComponent(deploymentCode) + '/versions'),
+    {
+      cache: 'no-store',
+      headers: extraHeaders,
+    },
+  );
+
+  if (res.status === 401) {
+    return { kind: 'unauthenticated' };
+  }
+
+  if (res.status === 403) {
+    return { kind: 'forbidden' };
+  }
+
+  if (!res.ok) {
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      // ignore JSON parse errors for non-JSON bodies
+    }
+
+    if (
+      res.status === 404 &&
+      isErrorBody(body) &&
+      body.error === 'deployment_not_found'
+    ) {
+      return { kind: 'deployment_not_found', deploymentCode };
+    }
+
+    throw new Error(
+      'Failed to fetch config versions: ' + res.status + ' ' + res.statusText,
+    );
+  }
+
+  const body = (await res.json()) as {
+    deployment: ConfigDeployment;
+    versions?: ConfigVersion[];
+  };
+
+  return {
+    kind: 'ok',
+    deployment: body.deployment,
+    versions: Array.isArray(body.versions) ? body.versions : [],
+  };
+}
+
+export async function activateConfigVersion(
+  deploymentCode: string,
+  versionNumber: number,
+  extraHeaders: Record<string, string> = {},
+): Promise<ConfigActivationResult> {
+  const res = await fetch(
+    makeUrl(
+      '/config/' +
+        encodeURIComponent(deploymentCode) +
+        '/versions/' +
+        String(versionNumber) +
+        '/activate',
+    ),
+    {
+      method: 'POST',
+      cache: 'no-store',
+      headers: extraHeaders,
+    },
+  );
+
+  if (res.status === 401) {
+    return { kind: 'unauthenticated' };
+  }
+
+  if (res.status === 403) {
+    return { kind: 'forbidden' };
+  }
+
+  if (!res.ok) {
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      // ignore JSON parse errors for non-JSON bodies
+    }
+
+    if (
+      res.status === 404 &&
+      isErrorBody(body) &&
+      body.error === 'deployment_not_found'
+    ) {
+      return { kind: 'deployment_not_found', deploymentCode };
+    }
+
+    if (
+      res.status === 404 &&
+      isErrorBody(body) &&
       body.error === 'config_version_not_found'
     ) {
       return {
@@ -208,11 +254,14 @@ export async function activateConfigVersion(
     );
   }
 
-  const body = await res.json();
+  const body = (await res.json()) as {
+    deployment: ConfigDeployment;
+    configVersion: ConfigVersion;
+  };
 
   return {
     kind: 'ok',
-    deployment: body.deployment as ConfigDeployment,
-    configVersion: body.configVersion as ConfigVersion,
+    deployment: body.deployment,
+    configVersion: body.configVersion,
   };
 }

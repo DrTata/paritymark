@@ -26,6 +26,12 @@ const {
   assignRoleToUser,
   assignPermissionToRole,
 } = require(path.resolve(ROOT_DIR, 'apps/api/src/identity'));
+const {
+  createSeries,
+  createPaper,
+  createQig,
+  createItem,
+} = require(path.resolve(ROOT_DIR, 'apps/api/src/assessment'));
 
 /**
  * Clear all config-related data for a stable baseline.
@@ -235,6 +241,9 @@ When('{string} creates user {string}', async function (actorName, userName) {
 
 /**
  * Step: "<actor>" creates Series "<seriesName>"
+ *
+ * Backed by the real assessment tables, while still recording a series
+ * object in the scenario context so later steps behave as before.
  */
 When('{string} creates Series {string}', async function (actorName, seriesName) {
   const ctx = ensureIdentityContext(
@@ -252,9 +261,27 @@ When('{string} creates Series {string}', async function (actorName, seriesName) 
       '"',
   );
 
+  const deploymentCode = ctx.deploymentCode || 'D1';
+
+  // Ensure there is a deployment row, and get its id.
+  const deploymentId = await ensureDeploymentExists(deploymentCode);
+
+  // For now we treat the seriesName as the public code, and derive a name.
+  const seriesCode = seriesName;
+  const seriesDisplayName = 'Series ' + seriesName + ' (' + deploymentCode + ')';
+
+  const seriesRow = await createSeries(
+    deploymentId,
+    seriesCode,
+    seriesDisplayName,
+  );
+
   const series = {
-    name: seriesName,
-    deploymentCode: ctx.deploymentCode || 'D1',
+    id: seriesRow.id,
+    code: seriesRow.code,
+    name: seriesRow.name,
+    deploymentId: seriesRow.deployment_id,
+    deploymentCode: deploymentCode,
     createdBy: actorName,
   };
 
@@ -263,6 +290,9 @@ When('{string} creates Series {string}', async function (actorName, seriesName) 
 
 /**
  * Step: "<actor>" creates Paper "<paperName>" in Series "<seriesName>"
+ *
+ * Now backed by the real assessment tables (assessment_papers), while still
+ * recording a paper object in the scenario context for downstream steps.
  */
 When(
   '{string} creates Paper {string} in Series {string}',
@@ -284,18 +314,29 @@ When(
 
     const series = ctx.seriesByName[seriesName];
     assert.ok(
-      series,
+      series && series.id,
       'Expected Series "' +
         seriesName +
-        '" to exist before creating Paper "' +
+        '" with a DB-backed id to exist before creating Paper "' +
         paperName +
         '"',
     );
 
+    const deploymentCode = ctx.deploymentCode || 'D1';
+
+    // Treat paperName as the public code, derive a human-readable name.
+    const paperCode = paperName;
+    const paperDisplayName = 'Paper ' + paperName + ' (' + deploymentCode + ')';
+
+    const paperRow = await createPaper(series.id, paperCode, paperDisplayName);
+
     const paper = {
-      name: paperName,
+      id: paperRow.id,
+      code: paperRow.code,
+      name: paperRow.name,
+      seriesId: paperRow.series_id,
       seriesName: seriesName,
-      deploymentCode: ctx.deploymentCode || 'D1',
+      deploymentCode: deploymentCode,
       createdBy: actorName,
     };
 
@@ -305,6 +346,9 @@ When(
 
 /**
  * Step: "<actor>" creates QIG "<qigName>" in Paper "<paperName>"
+ *
+ * Now backed by the real assessment tables (assessment_qigs), while still
+ * recording a QIG object in the scenario context for downstream steps.
  */
 When(
   '{string} creates QIG {string} in Paper {string}',
@@ -326,19 +370,30 @@ When(
 
     const paper = ctx.papersByName[paperName];
     assert.ok(
-      paper,
+      paper && paper.id,
       'Expected Paper "' +
         paperName +
-        '" to exist before creating QIG "' +
+        '" with a DB-backed id to exist before creating QIG "' +
         qigName +
         '"',
     );
 
+    const deploymentCode = ctx.deploymentCode || 'D1';
+
+    // Treat qigName as the public code, derive a human-readable name.
+    const qigCode = qigName;
+    const qigDisplayName = 'QIG ' + qigName + ' (' + deploymentCode + ')';
+
+    const qigRow = await createQig(paper.id, qigCode, qigDisplayName);
+
     const qig = {
-      name: qigName,
+      id: qigRow.id,
+      code: qigRow.code,
+      name: qigRow.name,
+      paperId: qigRow.paper_id,
       paperName: paperName,
       seriesName: paper.seriesName,
-      deploymentCode: ctx.deploymentCode || 'D1',
+      deploymentCode: deploymentCode,
       createdBy: actorName,
       items: [],
     };
@@ -349,6 +404,10 @@ When(
 
 /**
  * Step: "<actor>" creates Item "<itemName>" with max mark <maxMark> in QIG "<qigName>"
+ *
+ * Now backed by the real assessment tables (assessment_items), while still
+ * recording items in the QIG object in the scenario context for downstream
+ * steps and assertions.
  */
 When(
   '{string} creates Item {string} with max mark {int} in QIG {string}',
@@ -370,10 +429,10 @@ When(
 
     const qig = ctx.qigsByName[qigName];
     assert.ok(
-      qig,
+      qig && qig.id,
       'Expected QIG "' +
         qigName +
-        '" to exist before creating Item "' +
+        '" with a DB-backed id to exist before creating Item "' +
         itemName +
         '"',
     );
@@ -382,9 +441,16 @@ When(
       qig.items = [];
     }
 
+    // Treat itemName as the public code; store maxMark as per MOD-02 schema.
+    const itemCode = itemName;
+    const itemRow = await createItem(qig.id, itemCode, maxMark);
+
     const item = {
+      id: itemRow.id,
+      code: itemRow.code,
       name: itemName,
-      maxMark: maxMark,
+      maxMark: itemRow.max_mark,
+      qigId: itemRow.qig_id,
       qigName: qigName,
       paperName: qig.paperName,
       seriesName: qig.seriesName,

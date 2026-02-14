@@ -1,13 +1,19 @@
-import { fetchActiveConfig, fetchConfigVersions } from '@/lib/apiConfig';
+import {
+  fetchActiveConfig,
+  fetchConfigVersions,
+  type ConfigActiveResult,
+  type ConfigVersionsResult,
+} from '@/lib/apiConfig';
 import { ConfigVersionsPanel } from './ConfigVersionsPanel';
+import { getMessages, defaultLocale, type Locale } from '../../i18n';
 
 export const dynamic = 'force-dynamic';
 
 const DEFAULT_DEPLOYMENT_CODE = 'D1';
 
 export default async function ConfigPage() {
-  let active: any;
-  let versions: any;
+  let active: ConfigActiveResult | null = null;
+  let versions: ConfigVersionsResult | null = null;
   let error: string | null = null;
 
   try {
@@ -17,45 +23,68 @@ export default async function ConfigPage() {
     error = err instanceof Error ? err.message : 'Unknown error';
   }
 
+  // Derive locale from active config artifacts (if available),
+  // falling back to the default locale.
+  let locale: Locale = defaultLocale;
+  if (active && active.kind === 'ok') {
+    const artifacts = (active as any)?.artifacts;
+    const maybeLocale = artifacts?.ui?.locale;
+
+    if (maybeLocale === 'en-GB' || maybeLocale === 'fr-FR') {
+      locale = maybeLocale;
+    }
+  }
+
+  const messages = getMessages(locale);
+  const t = messages.config;
+
   return (
     <main style={{ padding: '2rem', fontFamily: 'system-ui, sans-serif' }}>
-      <h1>Config for deployment {DEFAULT_DEPLOYMENT_CODE}</h1>
+      <h1>
+        {t.titlePrefix} {DEFAULT_DEPLOYMENT_CODE}
+      </h1>
 
       {error ? (
-        <p data-testid="config-error">Failed to load config: {error}</p>
+        <p data-testid="config-error">
+          {t.activeErrorPrefix}: {error}
+        </p>
       ) : (
         <>
           <section style={{ marginTop: '1.5rem' }}>
-            <h2>Active config</h2>
+            <h2>{t.activeHeading}</h2>
 
             {!active ? (
-              <p>Loading active config...</p>
+              <p>{t.activeLoading}</p>
             ) : active.kind === 'unauthenticated' ? (
               <p data-testid="config-active-unauthenticated">
-                You are not authenticated. Cannot load active config.
+                {t.activeUnauthenticated}
               </p>
             ) : active.kind === 'forbidden' ? (
               <p data-testid="config-active-forbidden">
-                You do not have permission to view active config.
+                {t.activeForbidden}
               </p>
             ) : active.kind === 'deployment_not_found' ? (
               <p data-testid="config-active-deployment-not-found">
-                Deployment {active.deploymentCode} was not found.
+                {t.activeDeploymentNotFoundPrefix}{' '}
+                {active.deploymentCode}{' '}
+                {t.activeDeploymentNotFoundSuffix}
               </p>
             ) : active.kind === 'active_config_not_found' ? (
               <p data-testid="config-active-not-found">
-                No active config found for deployment {active.deploymentCode}.
+                {t.activeNotFoundPrefix}{' '}
+                {active.deploymentCode}
+                {t.activeNotFoundSuffix}
               </p>
             ) : (
               <div data-testid="config-active-ok">
                 <p>
-                  Deployment:{' '}
+                  {t.activeSummaryDeploymentLabel}{' '}
                   <strong>
                     {active.deployment.code} – {active.deployment.name}
                   </strong>
                 </p>
                 <p>
-                  Active version:{' '}
+                  {t.activeSummaryActiveVersionLabel}{' '}
                   <strong>{active.configVersion.version_number}</strong>
                 </p>
               </div>
@@ -63,21 +92,23 @@ export default async function ConfigPage() {
           </section>
 
           <section style={{ marginTop: '2rem' }}>
-            <h2>Config versions</h2>
+            <h2>{t.versionsHeading}</h2>
 
             {!versions ? (
-              <p>Loading versions...</p>
+              <p>{t.versionsLoading}</p>
             ) : versions.kind === 'unauthenticated' ? (
               <p data-testid="config-versions-unauthenticated">
-                You are not authenticated. Cannot load versions.
+                {t.versionsUnauthenticated}
               </p>
             ) : versions.kind === 'forbidden' ? (
               <p data-testid="config-versions-forbidden">
-                You do not have permission to view config versions.
+                {t.versionsForbidden}
               </p>
             ) : versions.kind === 'deployment_not_found' ? (
               <p data-testid="config-versions-deployment-not-found">
-                Deployment {versions.deploymentCode} was not found.
+                {t.activeDeploymentNotFoundPrefix}{' '}
+                {versions.deploymentCode}{' '}
+                {t.activeDeploymentNotFoundSuffix}
               </p>
             ) : (
               <ConfigVersionsPanel

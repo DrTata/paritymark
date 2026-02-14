@@ -87,4 +87,49 @@ describe('ConfigPage', () => {
     const msg = await screen.findByTestId('config-versions-unauthenticated');
     expect(msg.textContent).toContain('not authenticated');
   });
+
+  test('uses locale from active config artifacts to render French text', async () => {
+    mockedFetchActiveConfig.mockResolvedValue({
+      kind: 'ok',
+      deployment: { id: 1, code: 'D1', name: 'Example Deployment' },
+      configVersion: {
+        id: 1,
+        deployment_id: 1,
+        version_number: 1,
+        status: 'ACTIVE',
+      },
+      artifacts: {
+        ui: {
+          locale: 'fr-FR',
+        },
+      },
+    });
+
+    mockedFetchConfigVersions.mockResolvedValue({
+      kind: 'ok',
+      deployment: { id: 1, code: 'D1', name: 'Example Deployment' },
+      versions: [
+        {
+          id: 1,
+          deployment_id: 1,
+          version_number: 1,
+          status: 'ACTIVE',
+        },
+      ],
+    });
+
+    const ui = await ConfigPage();
+    render(ui as React.ReactElement);
+
+    // The <h1> is built from messages.config.titlePrefix + " " + DEFAULT_DEPLOYMENT_CODE.
+    const heading = await screen.findByRole('heading', { level: 1 });
+    expect(heading.textContent).toBe('Config (FR) pour le déploiement D1');
+
+    // And the active heading should also be the French variant.
+    const activeHeading = await screen.findByRole('heading', {
+      level: 2,
+      name: 'Config active (FR)',
+    });
+    expect(activeHeading.textContent).toBe('Config active (FR)');
+  });
 });
