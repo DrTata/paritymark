@@ -244,6 +244,27 @@ async function getPermissionsForUser(userId) {
 }
 
 /**
+ * Fetch all roles for a given user id.
+ * Returns an array of role rows { id, key, name, created_at, archived_at }.
+ * Archived roles are excluded to avoid stale AE/QIG scoping.
+ */
+async function getRolesForUser(userId) {
+  await ensureIdentityTables();
+
+  const selectSql = `
+    SELECT r.id, r.key, r.name, r.created_at, r.archived_at
+    FROM ${ROLES_TABLE_NAME} r
+    JOIN ${USER_ROLES_TABLE_NAME} ur
+      ON ur.role_id = r.id
+    WHERE ur.user_id = $1
+      AND r.archived_at IS NULL
+  `;
+
+  const result = await pool.query(selectSql, [userId]);
+  return result.rows || [];
+}
+
+/**
  * Check whether a user has a specific permission key via their roles.
  * Returns a boolean.
  */
@@ -266,6 +287,181 @@ async function userHasPermission(userId, permissionKey) {
   return result.rowCount > 0;
 }
 
+/**
+ * Fetch a role by its unique key.
+ * Returns null if not found.
+ */
+async function getRoleByKey(key) {
+  await ensureIdentityTables();
+
+  const selectSql = `
+    SELECT id, key, name, created_at, archived_at
+    FROM ${ROLES_TABLE_NAME}
+    WHERE key = $1
+  `;
+
+  const result = await pool.query(selectSql, [key]);
+  if (!result.rows || result.rows.length === 0) {
+    return null;
+  }
+  return result.rows[0];
+}
+
+/**
+ * Fetch a permission by its unique key.
+ * Returns null if not found.
+ */
+async function getPermissionByKey(key) {
+  await ensureIdentityTables();
+
+  const selectSql = `
+    SELECT id, key, description, created_at
+    FROM ${PERMISSIONS_TABLE_NAME}
+    WHERE key = $1
+  `;
+
+  const result = await pool.query(selectSql, [key]);
+  if (!result.rows || result.rows.length === 0) {
+    return null;
+  }
+  return result.rows[0];
+}
+
+/**
+ * Core RM-style roles and permissions used for dev seeding.
+ *
+ * These are intentionally minimal for Phase 1 and only cover the
+ * System Administrator and Assessment Administrator roles.
+ */
+const CORE_ROLES = [
+  { key: 'system-admin', name: 'System Administrator' },
+  { key: 'assessment-admin', name: 'Assessment Administrator' },
+];
+
+const CORE_PERMISSIONS = [
+  {
+    key: 'config.view',
+    description: 'View configuration and deployment settings',
+  },
+  {
+    key: 'config.edit',
+    description: 'Edit configuration and author drafts',
+  },
+  {
+    key: 'config.activate',
+    description: 'Activate configuration versions',
+  },
+  {
+    key: 'assessment.view',
+    description: 'View assessment tree and sessions',
+  },
+  {
+    key: 'assessment.manage',
+    description: 'Manage assessment setup and workflow',
+  },
+];
+
+/**
+ * Mapping from role key -> array of permission keys.
+ */
+const CORE_ROLE_PERMISSIONS = {
+  'system-admin': [
+    'config.view',
+    'config.edit',
+    'config.activate',
+    'assessment.view',
+    'assessment.manage',
+  ],
+  'assessment-admin': ['config.view', 'assessment.view', 'assessment.manage'],
+};
+
+/**
+ * Ensure the core roles and permissions model exists in the database and that
+ * role-permission links are in place.
+ *
+ * This is safe and idempotent and is primarily used by dev seeding helpers.
+ */
+async function ensureCoreRbacModel() {
+  await ensureIdentityTables();
+
+  const rolesByKey = new Map();
+  for (const roleDef of CORE_ROLES) {
+    // eslint-disable-next-line no-await-in-loop
+    let role = await getRoleByKey(roleDef.key);
+    if (!role) {
+      // eslint-disable-next-line no-await-in-loop
+      role = await createRole(roleDef.key, roleDef.name);
+    }
+    rolesByKey.set(roleDef.key, role);
+  }
+
+  const permsByKey = new Map();
+  for (const permDef of CORE_PERMISSIONS) {
+    // eslint-disable-next-line no-await-in-loop
+    let perm = await getPermissionByKey(permDef.key);
+    if (!perm) {
+      // eslint-disable-next-line no-await-in-loop
+      perm = await createPermission(permDef.key, permDef.description);
+    }
+    permsByKey.set(permDef.key, perm);
+  }
+
+  const entries = Object.entries(CORE_ROLE_PERMISSIONS);
+  for (const [roleKey, permKeys] of entries) {
+    const role = rolesByKey.get(roleKey);
+    if (!role) {
+      // eslint-disable-next-line no-continue
+      continue;
+    }
+
+    for (const permKey of permKeys) {
+      const perm = permsByKey.get(permKey);
+      if (!perm) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await assignPermissionToRole(role.id, perm.id);
+    }
+  }
+}
+
+/**
+ * Dev-only helper: ensure that the well-known admin@pm account exists with
+ * System Administrator and Assessment Administrator roles attached.
+ *
+ * This is only invoked for that specific external id and is safe to call on
+ * every request that carries the header.
+ */
+async function ensureDevAdminSeed(externalId, displayName) {
+  if (!externalId || externalId !== 'admin@pm') {
+    return null;
+  }
+
+  await ensureIdentityTables();
+  await ensureCoreRbacModel();
+
+  let user = await getUserByExternalId(externalId);
+  if (!user) {
+    user = await createUser(
+      externalId,
+      displayName || 'System Administrator',
+    );
+  }
+
+  const systemAdminRole = await getRoleByKey('system-admin');
+  const assessmentAdminRole = await getRoleByKey('assessment-admin');
+
+  if (systemAdminRole) {
+    await assignRoleToUser(user.id, systemAdminRole.id);
+  }
+  if (assessmentAdminRole) {
+    await assignRoleToUser(user.id, assessmentAdminRole.id);
+  }
+
+  return user;
+}
+
 module.exports = {
   USERS_TABLE_NAME,
   ROLES_TABLE_NAME,
@@ -281,5 +477,10 @@ module.exports = {
   getUserById,
   getUserByExternalId,
   getPermissionsForUser,
+  getRolesForUser,
   userHasPermission,
+  getRoleByKey,
+  getPermissionByKey,
+  ensureCoreRbacModel,
+  ensureDevAdminSeed,
 };

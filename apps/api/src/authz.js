@@ -4,7 +4,12 @@ const {
   getPermissionsForUser,
   userHasPermission,
   ensureIdentityTables,
+  ensureDevAdminSeed,
 } = require('./identity');
+const {
+  writeAuditEvent,
+  PERMISSION_DENIED_EVENT_TYPE,
+} = require('./audit');
 
 /**
  * Extract an external user id and display name from the HTTP request headers.
@@ -45,6 +50,15 @@ async function getOrCreateUserForRequest(req) {
   }
 
   const { externalId, displayName } = extracted;
+
+  // Dev helper: seed the well-known admin@pm account with core roles and
+  // permissions to match the RM Assessor System Administrator defaults.
+  if (externalId === 'admin@pm') {
+    const seeded = await ensureDevAdminSeed(externalId, displayName);
+    if (seeded) {
+      return seeded;
+    }
+  }
 
   const existing = await getUserByExternalId(externalId);
   if (existing && !existing.archived_at) {
@@ -111,7 +125,8 @@ async function checkPermissionForRequest(req, permissionKey) {
  *   - Writes a 401 (unauthenticated) or 403 (forbidden) JSON response.
  *   - Returns false, signalling the caller to stop further handling.
  *
- * NOTE: In this slice we DO NOT wire this into any real endpoints yet.
+ * Additionally, we write a PERMISSION_DENIED audit event on failure, with
+ * enough context to support supervision/debugging.
  */
 async function enforcePermission(req, res, permissionKey) {
   const result = await checkPermissionForRequest(req, permissionKey);
@@ -122,11 +137,40 @@ async function enforcePermission(req, res, permissionKey) {
 
   const status = result.reason === 'unauthenticated' ? 401 : 403;
 
+  try {
+    await writeAuditEvent(PERMISSION_DENIED_EVENT_TYPE, {
+      meta: {
+        permission: permissionKey,
+        reason: result.reason,
+        path: req && req.url ? req.url : null,
+        method: req && req.method ? req.method : null,
+      },
+      subject: result.user
+        ? {
+            id: result.user.id,
+            externalId: result.user.external_id,
+            displayName: result.user.display_name,
+          }
+        : null,
+    });
+  } catch (err) {
+    // Best-effort: permission denial should not fail the handler.
+    // eslint-disable-next-line no-console
+    console.error('Failed to write permission denied audit event', {
+      error: err,
+      permissionKey,
+      reason: result.reason,
+      path: req && req.url ? req.url : null,
+      method: req && req.method ? req.method : null,
+    });
+  }
+
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
   res.end(
     JSON.stringify({
-      error: result.reason === 'unauthenticated' ? 'unauthenticated' : 'forbidden',
+      error:
+        result.reason === 'unauthenticated' ? 'unauthenticated' : 'forbidden',
       permission: permissionKey,
     }),
   );

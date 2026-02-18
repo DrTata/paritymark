@@ -12,6 +12,7 @@ const {
   assignRoleToUser,
   assignPermissionToRole,
   getPermissionsForUser,
+  getRolesForUser,
   userHasPermission,
 } = require('../src/identity');
 
@@ -65,5 +66,27 @@ describe('identity / RBAC integration', () => {
 
     const permissions = await getPermissionsForUser(user.id);
     expect(permissions).toContain('config.view');
+  });
+
+  test('getRolesForUser returns only non-archived roles for a user', async () => {
+    const user = await createUser('user-3', 'User Three');
+
+    const activeRole = await createRole('role_active', 'Active role');
+    const archivedRole = await createRole('role_archived', 'Archived role');
+
+    await assignRoleToUser(user.id, activeRole.id);
+    await assignRoleToUser(user.id, archivedRole.id);
+
+    // Archive one of the roles
+    await pool.query(
+      `UPDATE ${ROLES_TABLE_NAME} SET archived_at = NOW() WHERE id = $1`,
+      [archivedRole.id],
+    );
+
+    const roles = await getRolesForUser(user.id);
+    const roleKeys = roles.map((r) => r.key);
+
+    expect(roleKeys).toContain('role_active');
+    expect(roleKeys).not.toContain('role_archived');
   });
 });

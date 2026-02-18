@@ -40,6 +40,13 @@ const {
   createQig,
   createItem,
 } = require(path.resolve(ROOT_DIR, 'apps/api/src/assessment'));
+const {
+  ensureAuditTable,
+  AUDIT_TABLE_NAME,
+  ASSESSMENT_TREE_VIEWED_EVENT_TYPE,
+  PERMISSION_DENIED_EVENT_TYPE,
+  getLatestAuditEventByType,
+} = require(path.resolve(ROOT_DIR, 'apps/api/src/audit'));
 
 let apiProcess = null;
 let lastTreeResponse = null;
@@ -121,12 +128,13 @@ async function waitForDbHealthUp(timeoutMs = 30000) {
 }
 
 /**
- * Clear all assessment/config/identity data for a stable baseline.
+ * Clear all assessment/config/identity/audit data for a stable baseline.
  */
 async function clearAllAssessmentData() {
   await ensureConfigTables();
   await ensureIdentityTables();
   await ensureAssessmentTables();
+  await ensureAuditTable();
 
   // Assessment tables
   await pool.query(`DELETE FROM ${ASSESSMENT_ITEMS_TABLE_NAME}`);
@@ -151,6 +159,9 @@ async function clearAllAssessmentData() {
       RESTART IDENTITY CASCADE
     `,
   );
+
+  // Audit table
+  await pool.query(`DELETE FROM ${AUDIT_TABLE_NAME}`);
 }
 
 /**
@@ -253,6 +264,20 @@ Given('I am an authorised assessment tree viewer', async function () {
 
   await assignRoleToUser(user.id, role.id);
   await assignPermissionToRole(role.id, perm.id);
+
+  assessmentRequestHeaders = {
+    'x-user-external-id': user.external_id,
+    'x-user-display-name': user.display_name,
+  };
+});
+
+Given('I am an unauthorised assessment tree viewer', async function () {
+  await ensureIdentityTables();
+
+  const user = await createUser(
+    'no-assessment-perm',
+    'No Assessment Perm',
+  );
 
   assessmentRequestHeaders = {
     'x-user-external-id': user.external_id,
@@ -416,6 +441,164 @@ Then(
       it.maxMark,
       20,
       `Expected first item.maxMark to be 20, got "${it.maxMark}"`,
+    );
+  },
+);
+
+Then(
+  'the JSON assessment tree permission error is {string} for permission {string}',
+  function (expectedError, expectedPermission) {
+    assert.ok(
+      typeof lastTreeBody === 'string',
+      'Expected a string assessment tree response body to be recorded',
+    );
+
+    let parsed;
+    try {
+      parsed = lastTreeJson || JSON.parse(lastTreeBody);
+    } catch (err) {
+      throw new Error(
+        `Expected JSON assessment tree response body, but parsing failed: ${err.message}. Body was: ${lastTreeBody}`,
+      );
+    }
+
+    assert.ok(
+      parsed && typeof parsed === 'object',
+      `Expected JSON object from assessment tree endpoint, got: ${lastTreeBody}`,
+    );
+
+    assert.strictEqual(
+      parsed.error,
+      expectedError,
+      `Expected error="${expectedError}", got "${parsed.error}"`,
+    );
+    assert.strictEqual(
+      parsed.permission,
+      expectedPermission,
+      `Expected permission="${expectedPermission}", got "${parsed.permission}"`,
+    );
+  },
+);
+
+Then(
+  'the JSON assessment tree error code is {string}',
+  function (expectedErrorCode) {
+    assert.ok(
+      typeof lastTreeBody === 'string',
+      'Expected a string assessment tree response body to be recorded',
+    );
+
+    let parsed;
+    try {
+      parsed = lastTreeJson || JSON.parse(lastTreeBody);
+    } catch (err) {
+      throw new Error(
+        `Expected JSON assessment tree response body, but parsing failed: ${err.message}. Body was: ${lastTreeBody}`,
+      );
+    }
+
+    assert.ok(
+      parsed && typeof parsed === 'object',
+      `Expected JSON object from assessment tree endpoint, got: ${lastTreeBody}`,
+    );
+
+    assert.strictEqual(
+      parsed.error,
+      expectedErrorCode,
+      `Expected error="${expectedErrorCode}", got "${parsed.error}"`,
+    );
+  },
+);
+
+Then(
+  'an assessment tree view audit event exists for deployment {string} and user {string}',
+  async function (deploymentCode, userExternalId) {
+    const event = await getLatestAuditEventByType(
+      ASSESSMENT_TREE_VIEWED_EVENT_TYPE,
+    );
+
+    assert.ok(
+      event,
+      'Expected an ASSESSMENT_TREE_VIEWED audit event to exist',
+    );
+    assert.strictEqual(
+      event.event_type,
+      ASSESSMENT_TREE_VIEWED_EVENT_TYPE,
+      `Expected event_type=${ASSESSMENT_TREE_VIEWED_EVENT_TYPE}, got ${event.event_type}`,
+    );
+
+    const payload = event.payload || {};
+    const meta = payload.meta || {};
+    const actor = payload.actor || {};
+
+    assert.strictEqual(
+      meta.deploymentCode,
+      deploymentCode,
+      `Expected meta.deploymentCode="${deploymentCode}", got "${meta.deploymentCode}"`,
+    );
+    assert.ok(
+      typeof meta.deploymentId === 'number',
+      `Expected numeric meta.deploymentId, got ${meta.deploymentId}`,
+    );
+    assert.strictEqual(
+      meta.method,
+      'GET',
+      `Expected meta.method="GET", got "${meta.method}"`,
+    );
+    assert.ok(
+      typeof meta.path === 'string' &&
+        meta.path.indexOf(`/assessment/${deploymentCode}/tree`) === 0,
+      `Expected meta.path to start with "/assessment/${deploymentCode}/tree", got "${meta.path}"`,
+    );
+
+    assert.strictEqual(
+      actor.externalId,
+      userExternalId,
+      `Expected actor.externalId="${userExternalId}", got "${actor.externalId}"`,
+    );
+  },
+);
+
+Then(
+  'a permission denied audit event exists for permission {string} and reason {string}',
+  async function (permissionKey, reason) {
+    const event = await getLatestAuditEventByType(
+      PERMISSION_DENIED_EVENT_TYPE,
+    );
+
+    assert.ok(
+      event,
+      'Expected a PERMISSION_DENIED audit event to exist',
+    );
+    assert.strictEqual(
+      event.event_type,
+      PERMISSION_DENIED_EVENT_TYPE,
+      `Expected event_type=${PERMISSION_DENIED_EVENT_TYPE}, got ${event.event_type}`,
+    );
+
+    const payload = event.payload || {};
+    const meta = payload.meta || {};
+
+    assert.strictEqual(
+      meta.permission,
+      permissionKey,
+      `Expected meta.permission="${permissionKey}", got "${meta.permission}"`,
+    );
+    assert.strictEqual(
+      meta.reason,
+      reason,
+      `Expected meta.reason="${reason}", got "${meta.reason}"`,
+    );
+
+    assert.strictEqual(
+      meta.method,
+      'GET',
+      `Expected meta.method="GET", got "${meta.method}"`,
+    );
+    assert.ok(
+      typeof meta.path === 'string' &&
+        meta.path.indexOf('/assessment/') === 0,
+      `Expected meta.path to start with "/assessment/", got "${meta.path}"`,
     );
   },
 );

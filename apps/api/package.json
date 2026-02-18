@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "node src/server.js",
     "start": "node src/server.js",
-    "test": "jest __tests__/health.test.js __tests__/version.test.js __tests__/audit.test.js",
-    "test:integration": "API_USE_DB_HEALTH=true DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=paritymark DB_PASSWORD=paritymark DB_NAME=paritymark jest --runInBand __tests__/health.integration.test.js __tests__/audit.integration.test.js __tests__/audit.endpoint.integration.test.js __tests__/config.integration.test.js __tests__/config.versions.integration.test.js __tests__/config.activation.endpoint.integration.test.js __tests__/config.authoring.integration.test.js __tests__/config.authoring.endpoint.integration.test.js __tests__/identity.integration.test.js __tests__/authz.integration.test.js"
+    "test": "jest __tests__/health.test.js __tests__/version.test.js __tests__/audit.test.js __tests__/config.integration.test.js",
+    "test:integration": "API_USE_DB_HEALTH=true DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=paritymark DB_PASSWORD=paritymark DB_NAME=paritymark jest --runInBand __tests__/health.integration.test.js __tests__/audit.integration.test.js __tests__/audit.endpoint.integration.test.js __tests__/config.integration.test.js __tests__/config.versions.integration.test.js __tests__/config.activation.endpoint.integration.test.js __tests__/config.audit.integration.test.js __tests__/config.authoring.integration.test.js __tests__/config.authoring.endpoint.integration.test.js __tests__/identity.integration.test.js __tests__/authz.integration.test.js __tests__/assessment.endpoint.integration.test.js __tests__/marking.endpoint.integration.test.js"
   },
   "dependencies": {
     "pg": "^8.11.0"

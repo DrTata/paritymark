@@ -3,6 +3,7 @@ const {
   ensureConfigTables,
   getActiveConfigForDeploymentCode,
   activateConfigVersionForDeploymentCode,
+  createDeployment,
   DEPLOYMENTS_TABLE_NAME,
   CONFIG_VERSIONS_TABLE_NAME,
   CONFIG_ARTIFACTS_TABLE_NAME,
@@ -41,20 +42,11 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
   });
 
   test('returns notFound=active_config when deployment exists but no ACTIVE config version', async () => {
-    // Insert a deployment without any config versions
-    const insertDeploymentSql = `
-      INSERT INTO ${DEPLOYMENTS_TABLE_NAME} (code, name)
-      VALUES ($1, $2)
-      RETURNING id
-    `;
     const deploymentCode = 'D_NO_ACTIVE';
     const deploymentName = 'Deployment without active config';
 
-    const deploymentResult = await pool.query(insertDeploymentSql, [
-      deploymentCode,
-      deploymentName,
-    ]);
-    const deploymentId = deploymentResult.rows[0].id;
+    const deployment = await createDeployment(deploymentCode, deploymentName);
+    const deploymentId = deployment.id;
 
     // Sanity: no config_versions rows for this deployment
     const versionsResult = await pool.query(
@@ -76,20 +68,11 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
   });
 
   test('returns active config with artifacts (including ui.locale) for an existing deployment', async () => {
-    // Insert a deployment
-    const insertDeploymentSql = `
-      INSERT INTO ${DEPLOYMENTS_TABLE_NAME} (code, name)
-      VALUES ($1, $2)
-      RETURNING id
-    `;
     const deploymentCode = 'D1';
     const deploymentName = 'Example Deployment';
 
-    const deploymentResult = await pool.query(insertDeploymentSql, [
-      deploymentCode,
-      deploymentName,
-    ]);
-    const deploymentId = deploymentResult.rows[0].id;
+    const deployment = await createDeployment(deploymentCode, deploymentName);
+    const deploymentId = deployment.id;
 
     // Insert an ACTIVE config version
     const insertConfigVersionSql = `
@@ -181,20 +164,11 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
   });
 
   test('activation helper returns notFound=config_version when target version does not exist', async () => {
-    // Insert a deployment with no versions matching the requested number
-    const insertDeploymentSql = `
-      INSERT INTO ${DEPLOYMENTS_TABLE_NAME} (code, name)
-      VALUES ($1, $2)
-      RETURNING id
-    `;
     const deploymentCode = 'D_ACTIVATE_MISSING';
     const deploymentName = 'Deployment without target version';
 
-    const deploymentResult = await pool.query(insertDeploymentSql, [
-      deploymentCode,
-      deploymentName,
-    ]);
-    const deploymentId = deploymentResult.rows[0].id;
+    const deployment = await createDeployment(deploymentCode, deploymentName);
+    const deploymentId = deployment.id;
     expect(deploymentId).toBeTruthy();
 
     const activationResult =
@@ -210,20 +184,11 @@ describe('Config backbone: getActiveConfigForDeploymentCode and activation helpe
   });
 
   test('activation helper sets target version ACTIVE and retires previous ACTIVE versions', async () => {
-    // Insert a deployment
-    const insertDeploymentSql = `
-      INSERT INTO ${DEPLOYMENTS_TABLE_NAME} (code, name)
-      VALUES ($1, $2)
-      RETURNING id
-    `;
     const deploymentCode = 'D_ACTIVATE';
     const deploymentName = 'Deployment with multiple versions';
 
-    const deploymentResult = await pool.query(insertDeploymentSql, [
-      deploymentCode,
-      deploymentName,
-    ]);
-    const deploymentId = deploymentResult.rows[0].id;
+    const deployment = await createDeployment(deploymentCode, deploymentName);
+    const deploymentId = deployment.id;
 
     // Insert an initially ACTIVE config version (v1)
     const insertConfigVersionSql = `

@@ -1,31 +1,63 @@
 const pkg = require('../package.json');
-const { writeAuditEvent, HELLO_AUDIT_EVENT_TYPE } = require('./audit');
+const {
+  HELLO_AUDIT_EVENT_TYPE,
+  writeAuditEvent,
+} = require('./audit');
 
+/**
+ * Compute version metadata for the API service.
+ *
+ * This is used by both the /version HTTP handler and tests.
+ */
 function getVersionMeta() {
   return {
     service: 'api',
     name: pkg.name || 'api',
-    version: pkg.version || '0.0.0',
+    version: pkg.version,
     env: process.env.NODE_ENV || 'development',
   };
 }
 
-function versionHandler(_req, res) {
-  const meta = getVersionMeta();
+/**
+ * HTTP handler for GET /version.
+ *
+ * Responds with version metadata derived from package.json and environment.
+ * When ENABLE_HELLO_AUDIT === 'true', also writes a HELLO_AUDIT_EVENT
+ * audit row so integration tests and the /audit/hello/latest endpoint
+ * can assert on it.
+ */
+async function versionHandler(req, res) {
+  const body = getVersionMeta();
 
-  // Fire-and-forget "hello" audit event when enabled.
-  if (process.env.ENABLE_HELLO_AUDIT === 'true') {
-    writeAuditEvent(HELLO_AUDIT_EVENT_TYPE, { meta }).catch((err) => {
+  const enableHelloAudit =
+    process.env.ENABLE_HELLO_AUDIT === 'true';
+
+  if (enableHelloAudit) {
+    try {
+      await writeAuditEvent(HELLO_AUDIT_EVENT_TYPE, {
+        meta: {
+          version: body.version,
+          service: body.service,
+          name: body.name,
+          env: body.env,
+          path: req && req.url,
+          method: req && req.method,
+        },
+      });
+    } catch (err) {
+      // Best-effort: log, but never fail /version.
       // eslint-disable-next-line no-console
-      console.error('Failed to write audit event', err);
-    });
+      console.error('Failed to write HELLO_AUDIT_EVENT', {
+        error: err,
+        path: req && req.url,
+        method: req && req.method,
+      });
+    }
   }
-
-  const body = JSON.stringify(meta);
 
   res.statusCode = 200;
   res.setHeader('Content-Type', 'application/json');
-  res.end(body);
+  res.end(JSON.stringify(body));
 }
 
 module.exports = { versionHandler, getVersionMeta };

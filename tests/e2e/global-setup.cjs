@@ -109,11 +109,13 @@ module.exports = async () => {
     clearAllData,
     seedAssessmentTreeForDeployment,
     seedAssessmentViewerIdentity,
+    seedAssessmentAuthorIdentity,
     seedConfigActiveForLocale,
   } = require('./seed.cjs');
 
   await clearAllData();
   await seedAssessmentTreeForDeployment('D_ASSESS_HTTP');
   await seedAssessmentViewerIdentity();
+  await seedAssessmentAuthorIdentity();
   await seedConfigActiveForLocale('en-GB');
 };

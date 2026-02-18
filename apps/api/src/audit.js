@@ -2,6 +2,15 @@ const { pool } = require('./db');
 
 const HELLO_AUDIT_EVENT_TYPE = 'HELLO_AUDIT_EVENT';
 const ROLE_ASSIGNED_EVENT_TYPE = 'ROLE_ASSIGNED';
+const ASSESSMENT_TREE_VIEWED_EVENT_TYPE = 'ASSESSMENT_TREE_VIEWED';
+const ASSESSMENT_STRUCTURE_UPDATED_EVENT_TYPE = 'ASSESSMENT_STRUCTURE_UPDATED';
+const PERMISSION_DENIED_EVENT_TYPE = 'PERMISSION_DENIED';
+const CONFIG_DRAFT_CREATED_EVENT_TYPE = 'CONFIG_DRAFT_CREATED';
+const CONFIG_ACTIVATED_EVENT_TYPE = 'CONFIG_ACTIVATED';
+const ALLOCATION_RELEASED_EVENT_TYPE = 'ALLOCATION_RELEASED';
+const ALLOCATION_REASSIGNED_EVENT_TYPE = 'ALLOCATION_REASSIGNED';
+const MARKER_ELIGIBILITY_CHANGED_EVENT_TYPE = 'MARKER_ELIGIBILITY_CHANGED';
+
 const AUDIT_TABLE_NAME = 'audit_events';
 
 async function ensureAuditTable() {
@@ -22,10 +31,10 @@ async function ensureAuditTable() {
 
     // In Postgres, concurrent CREATE TABLE IF NOT EXISTS can still raise:
     // - 42P07: duplicate-table error due to internal catalog constraints.
-    // - 23505 + pg_type_typname_nsp_index: rare unique_violation in catalog when
-    //   multiple workers create the same table/type at once.
+    // - 23505 + pg_type_typname_nsp_index: rare unique_violation in catalog
+    //   when multiple workers create the same table/type at once.
     //
-    // For Phase 0 / Phase 1, we treat these specific cases as benign and rethrow everything else.
+    // We treat these specific cases as benign and rethrow everything else.
 
     // Duplicate table
     if (code === '42P07') {
@@ -79,6 +88,14 @@ async function getLatestAuditEventByType(eventType) {
 module.exports = {
   HELLO_AUDIT_EVENT_TYPE,
   ROLE_ASSIGNED_EVENT_TYPE,
+  ASSESSMENT_TREE_VIEWED_EVENT_TYPE,
+  ASSESSMENT_STRUCTURE_UPDATED_EVENT_TYPE,
+  PERMISSION_DENIED_EVENT_TYPE,
+  CONFIG_DRAFT_CREATED_EVENT_TYPE,
+  CONFIG_ACTIVATED_EVENT_TYPE,
+  ALLOCATION_RELEASED_EVENT_TYPE,
+  ALLOCATION_REASSIGNED_EVENT_TYPE,
+  MARKER_ELIGIBILITY_CHANGED_EVENT_TYPE,
   AUDIT_TABLE_NAME,
   ensureAuditTable,
   writeAuditEvent,

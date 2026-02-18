@@ -167,52 +167,6 @@ function ensureIdentityContext(world, deploymentCode) {
 }
 
 /**
- * Step: a Deployment "<code>" exists
- */
-Given('a Deployment {string} exists', async function (deploymentCode) {
-  await clearAllConfigData();
-  await ensureDeploymentExists(deploymentCode);
-});
-
-/**
- * Step: Deployment "<code>" has an ACTIVE ConfigVersion
- */
-Given(
-  'Deployment {string} has an ACTIVE ConfigVersion',
-  async function (deploymentCode) {
-    await ensureActiveConfigForDeployment(deploymentCode);
-  },
-);
-
-/**
- * Step: an admin user "<user>" exists in Deployment "<deployment>"
- */
-Given(
-  'an admin user {string} exists in Deployment {string}',
-  async function (userName, deploymentCode) {
-    await clearAllIdentityData();
-    const ctx = ensureIdentityContext(this, deploymentCode);
-
-    const externalId = deploymentCode + ':' + userName;
-    const displayName = 'Admin ' + userName + ' (' + deploymentCode + ')';
-
-    const user = await createUser(externalId, displayName);
-
-    const adminRole = await createRole('ADMIN', 'Deployment administrator');
-    const adminPerm = await createPermission(
-      'admin.all',
-      'Full administrative access within a deployment',
-    );
-
-    await assignRoleToUser(user.id, adminRole.id);
-    await assignPermissionToRole(adminRole.id, adminPerm.id);
-
-    ctx.usersByName[userName] = user;
-    ctx.rolesByName.ADMIN = adminRole;
-  },
-);
-
-/**
  * Step: "<actor>" creates user "<userName>"
  */
 When('{string} creates user {string}', async function (actorName, userName) {

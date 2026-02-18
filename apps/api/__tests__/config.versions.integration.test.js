@@ -4,6 +4,7 @@ const {
   getConfigVersionsForDeploymentId,
   DEPLOYMENTS_TABLE_NAME,
   CONFIG_VERSIONS_TABLE_NAME,
+  createDeployment,
 } = require('../src/config');
 
 jest.setTimeout(30000); // allow time for DB operations
@@ -20,12 +21,8 @@ describe('Config backbone: getConfigVersionsForDeploymentId', () => {
     await ensureConfigTables();
 
     // Clean up any existing test data for a stable baseline
-    await pool.query(
-      'DELETE FROM ' + CONFIG_VERSIONS_TABLE_NAME,
-    );
-    await pool.query(
-      'DELETE FROM ' + DEPLOYMENTS_TABLE_NAME,
-    );
+    await pool.query('DELETE FROM ' + CONFIG_VERSIONS_TABLE_NAME);
+    await pool.query('DELETE FROM ' + DEPLOYMENTS_TABLE_NAME);
   });
 
   afterAll(async () => {
@@ -33,19 +30,11 @@ describe('Config backbone: getConfigVersionsForDeploymentId', () => {
   });
 
   test('returns an empty array when deployment has no versions', async () => {
-    const insertDeploymentSql =
-      'INSERT INTO ' +
-      DEPLOYMENTS_TABLE_NAME +
-      ' (code, name) VALUES ($1, $2) RETURNING id';
-
     const deploymentCode = 'D_NO_VERSIONS';
     const deploymentName = 'Deployment with no versions';
 
-    const deploymentResult = await pool.query(insertDeploymentSql, [
-      deploymentCode,
-      deploymentName,
-    ]);
-    const deploymentId = deploymentResult.rows[0].id;
+    const deployment = await createDeployment(deploymentCode, deploymentName);
+    const deploymentId = deployment.id;
 
     const versions = await getConfigVersionsForDeploymentId(deploymentId);
 
@@ -54,19 +43,11 @@ describe('Config backbone: getConfigVersionsForDeploymentId', () => {
   });
 
   test('returns all versions for a deployment, ordered by version_number DESC', async () => {
-    const insertDeploymentSql =
-      'INSERT INTO ' +
-      DEPLOYMENTS_TABLE_NAME +
-      ' (code, name) VALUES ($1, $2) RETURNING id';
-
     const deploymentCode = 'D_VERSIONS';
     const deploymentName = 'Deployment with multiple versions';
 
-    const deploymentResult = await pool.query(insertDeploymentSql, [
-      deploymentCode,
-      deploymentName,
-    ]);
-    const deploymentId = deploymentResult.rows[0].id;
+    const deployment = await createDeployment(deploymentCode, deploymentName);
+    const deploymentId = deployment.id;
 
     const insertConfigVersionSql =
       'INSERT INTO ' +

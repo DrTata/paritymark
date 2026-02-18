@@ -6,6 +6,7 @@ const {
   DEPLOYMENTS_TABLE_NAME,
   CONFIG_VERSIONS_TABLE_NAME,
   CONFIG_ARTIFACTS_TABLE_NAME,
+  createDeployment,
 } = require('../src/config');
 const {
   ensureIdentityTables,
@@ -109,7 +110,6 @@ describe('Config activation HTTP endpoint with RBAC', () => {
     if (server && server.close) {
       await new Promise((resolve) => server.close(() => resolve()));
     }
-    // Close DB pool created for this test file so Jest can exit cleanly.
     await endPool();
   });
 
@@ -135,19 +135,11 @@ describe('Config activation HTTP endpoint with RBAC', () => {
     await assignRoleToUser(user.id, role.id);
     await assignPermissionToRole(role.id, permission.id);
 
-    // Seed a deployment with two versions
-    const insertDeploymentSql = `
-      INSERT INTO ${DEPLOYMENTS_TABLE_NAME} (code, name)
-      VALUES ($1, $2)
-      RETURNING id
-    `;
+    // Seed a deployment with two versions via helper
     const deploymentCode = 'D_ACT_HTTP';
     const deploymentName = 'HTTP activation test';
-    const deploymentResult = await pool.query(insertDeploymentSql, [
-      deploymentCode,
-      deploymentName,
-    ]);
-    const deploymentId = deploymentResult.rows[0].id;
+    const deployment = await createDeployment(deploymentCode, deploymentName);
+    const deploymentId = deployment.id;
 
     const insertVersionSql = `
       INSERT INTO ${CONFIG_VERSIONS_TABLE_NAME} (
